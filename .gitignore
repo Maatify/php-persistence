@@ -1,0 +1,35 @@
+# Dependencies and package-manager state
+/vendor/
+composer.lock
+/node_modules/
+
+# Credentials and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+auth.json
+
+# Caches and tool output
+.phpunit.cache/
+.phpunit.result.cache
+.php-cs-fixer.cache
+.phpstan/
+.phpstan.cache/
+/coverage/
+/build/
+/.cache/
+
+# Logs and temporary files
+*.log
+/tmp/
+*.tmp
+
+# Editors and operating systems
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
