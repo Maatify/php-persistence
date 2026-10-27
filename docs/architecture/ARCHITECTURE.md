@@ -127,7 +127,10 @@ Legacy documents (studies, ADRs, harness scripts) are referenced by permanent li
 | WU-8 Ordering | Depends on WU-6; B-01 to B-07; stale-snapshot, lazy-savepoint, rollback, soft-delete and nullable-scope cases; MariaDB cases per DEC-009. |
 | WU-9 Documentation | Package Reference with the literal topology declaration, API lists, exceptions, database support limited to what is verified, classifications; README without unverified claims; remaining documents required by the pinned Library Presentation Standard. |
 | WU-10 Harness and coexistence | External consumer harness run twice from a clean state; a job installing both packages in one clean Composer root; differential tests against legacy behavior where B-rows claim equivalence. |
-| WU-11 / WU-12 Release | Release artifact checks; the mandatory first Stable gate of Library Presentation §14.1 (published SemVer RC, harness on that RC, two independent Hosts, retained evidence); strict lead acceptance and explicit Owner authorization per the pinned standards; none authorized now. |
+| WU-11 Release Candidate preparation | Release artifact checks on the exact SemVer RC target (for example `1.0.0-rc.1`); release-facing files prepared without claiming publication; strict lead acceptance. Publishing is not part of this unit. |
+| WU-12 Release Candidate publication | The exact RC is published and externally resolvable and installable through Composer, after explicit Owner authorization. |
+| WU-13 Release Candidate verification | The Consumer Verification Harness runs against the exact published RC; then Real Host Validation of the same RC in at least two independent real projects (reusing one harness twice or several environments of one Host does not count); verifiable evidence retained, identifying the RC version and each Host. |
+| WU-14 Stable release | Stable preparation and publication only after the evidence of WU-13 is complete ([Library Presentation §14.1](../php-engineering-standards/standards/packages/LIBRARY_PRESENTATION_STANDARD.md)), with strict lead acceptance and explicit Owner authorization. |
 
 Each work unit also re-verifies the legacy source commit ([DEC-007](../decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md) item 1) and the pinned standards commit.
 
@@ -139,7 +142,7 @@ Each work unit also re-verifies the legacy source commit ([DEC-007](../decisions
 | MariaDB oldest and newest versions | DEC-009 | WU-5 MariaDB cells; any MariaDB claim |
 | Safe MariaDB contract for `1020` in caller-owned transactions | DEC-009 | WU-8 acceptance for MariaDB; any MariaDB claim |
 | `ext-pdo_mysql` requirement | none yet | WU-4 |
-| Which two independent Hosts validate the release candidate, and when | none yet | WU-11 and later |
-
-Not open: the first Stable release gate is mandatory under the pinned [Library Presentation Standard §14.1](../php-engineering-standards/standards/packages/LIBRARY_PRESENTATION_STANDARD.md): a published, externally installable SemVer RC; the Consumer Verification Harness run against that exact published RC; then Real Host Validation of the same RC in at least two independent real projects. CI success and the harness alone do not authorize Stable. Publishing, tagging and owner approval remain separate authorizations that this work does not give.
+| Which two independent Hosts validate the release candidate, and when | none yet | WU-13 |
 | Central standards change, consumer migration, legacy archive | none (separate authorizations) | Any statement that ownership transferred |
+
+Not open: the first Stable release gate is mandatory and is sequenced across WU-11 to WU-14 above (RC prepared, then published, then verified, then Stable); no condition that can only be met after the RC is published blocks WU-11 or WU-12 under the pinned [Library Presentation Standard §14.1](../php-engineering-standards/standards/packages/LIBRARY_PRESENTATION_STANDARD.md): a published, externally installable SemVer RC; the Consumer Verification Harness run against that exact published RC; then Real Host Validation of the same RC in at least two independent real projects. CI success and the harness alone do not authorize Stable. Publishing, tagging and owner approval remain separate authorizations that this work does not give.
