@@ -1,0 +1,43 @@
+name: Set up PHP and Composer
+description: >-
+  Installs the requested PHP minor with pdo_mysql and a deterministic Composer 2.10.3
+  (pinned version, SHA-256 verified). Composer 2.10 is the first release with the
+  dependency-policy model (config.policy) required by the pinned CI Workflow Standard.
+inputs:
+  php-version:
+    description: PHP minor to install (for example 8.4 or 8.5)
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Set up PHP ${{ inputs.php-version }}
+      # shivammathur/setup-php 2.40.0
+      uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962
+      with:
+        php-version: ${{ inputs.php-version }}
+        extensions: pdo, pdo_mysql, mbstring, tokenizer, ctype, json
+        tools: none
+        coverage: none
+        ini-values: error_reporting=-1, display_errors=On
+    - name: Install Composer 2.10.3 (pinned, checksum verified)
+      shell: bash
+      env:
+        COMPOSER_VERSION: 2.10.3
+        COMPOSER_SHA256: 7a2d379d5b8ffdaa028580ef26494c36d2feef4b178d3dd1473a4dbc5e17c8d6
+      run: |
+        set -euo pipefail
+        mkdir -p "$RUNNER_TEMP/composer-bin"
+        curl --fail --silent --show-error --location \
+          --output "$RUNNER_TEMP/composer.phar" \
+          "https://getcomposer.org/download/${COMPOSER_VERSION}/composer.phar"
+        echo "${COMPOSER_SHA256}  $RUNNER_TEMP/composer.phar" | sha256sum --check --strict -
+        install -m 0755 "$RUNNER_TEMP/composer.phar" "$RUNNER_TEMP/composer-bin/composer"
+        echo "$RUNNER_TEMP/composer-bin" >> "$GITHUB_PATH"
+        "$RUNNER_TEMP/composer-bin/composer" --version | tee /dev/stderr | grep -F "Composer version ${COMPOSER_VERSION}"
+    - name: Report the toolchain
+      shell: bash
+      run: |
+        set -euo pipefail
+        php --version
+        php -m | grep -E '^(PDO|pdo_mysql)$'
+        composer --version

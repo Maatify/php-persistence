@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — direct-PDO transaction, pagination and ordering utilities, designed for MySQL and MariaDB.
 
-Status: **Development**. This document describes the intended architecture decided in WU-3. Since WU-4 the repository contains a Composer manifest, quality tooling and only the exception marker interface; it contains no CI, and nothing here is released or installable. Statements about support are design targets, not claims ([DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md)).
+Status: **Development**. This document describes the intended architecture decided in WU-3. Since WU-4 the repository contains a Composer manifest, quality tooling and only the exception marker interface; its CI (WU-5) runs the quality gates and real-database infrastructure tests, and nothing here is released or installable. Statements about support are design targets, not claims ([DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md)).
 
 ## 1. Document map
 
@@ -12,6 +12,7 @@ Status: **Development**. This document describes the intended architecture decid
 | [CONTRACT_MATRIX.md](./CONTRACT_MATRIX.md) | Type-by-type mapping: legacy `v1.4.0`, legacy `main`, new package |
 | [BEHAVIOR_CONTRACT.md](./BEHAVIOR_CONTRACT.md) | Behaviors B-01 to B-16 and their future test requirements |
 | [DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md) | Engines, versions, matrix and test environment |
+| [CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md) | WU-5 CI workflow, Compose lifecycle, test matrix, image evidence |
 | [QUALITY_TOOLING.md](./QUALITY_TOOLING.md) | WU-4 toolchain, scripts, the PER Coding Style 3.1 verification gap and the planning inputs for WU-5 |
 | [../decisions/DECISIONS_INDEX.md](../decisions/DECISIONS_INDEX.md) | Durable decisions that this document applies |
 
@@ -122,7 +123,7 @@ Legacy documents (studies, ADRs, harness scripts) are referenced by permanent li
 | WU | Must satisfy before acceptance |
 |---|---|
 | WU-4 Composer and quality tooling | `php ^8.4`; PSR-4 per DEC-004; no `replace`/`provide`/`conflict`; no `version`, no `composer.lock`; `ext-pdo` and `ext-pdo_mysql` as mandatory `require` entries ([DEC-012](../decisions/DEC-012-mandatory-pdo-mysql-driver.md)); the package marker interface; PHPStan at max level without baseline; code style per the pinned PHP Coding Style Standard. |
-| WU-5 CI and Integration infrastructure | Matrix and environment rules of [DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md); first settle the open items in DEC-009 that the cells depend on; one parameterized Compose; pinned images; lowest/latest dependency jobs; a single required gate job. |
+| WU-5 CI and Integration infrastructure | Matrix and environment rules of [DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md); matrix cells per [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md); one parameterized Compose; pinned images; lowest/latest dependency jobs; a single required gate job. |
 | WU-6 Transaction | Apply [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md); characterization tests of the savepoint logic pass before the helpers are merged and before the API freeze; named tests for B-10 to B-13; Integration on PHP 8.4 and latest with real deadlocks; provenance gate. |
 | WU-7 Pagination | B-08, B-09 golden fixtures from legacy; provenance gate. |
 | WU-8 Ordering | Depends on WU-6; B-01 to B-07; stale-snapshot, lazy-savepoint, rollback, soft-delete and nullable-scope cases; MariaDB cases per DEC-009. |
@@ -139,9 +140,7 @@ Each work unit also re-verifies the legacy source commit ([DEC-007](../decisions
 
 | Item | Record | Blocks |
 |---|---|---|
-| MySQL newest endpoint, upper-bound policy, Innovation track | [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) `PROPOSED` | WU-5 matrix; any published MySQL range |
-| MariaDB oldest and newest versions | DEC-009 | WU-5 MariaDB cells; any MariaDB claim |
-| Safe MariaDB contract for `1020` in caller-owned transactions | DEC-009 | WU-8 acceptance for MariaDB; any MariaDB claim |
+| Safe MariaDB contract for `1020` in caller-owned transactions | [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) `PROPOSED` | WU-8 acceptance for MariaDB; any MariaDB claim |
 | Which two independent Hosts validate the release candidate, and when | none yet | WU-13 |
 | Central standards change, consumer migration, legacy archive | none (separate authorizations) | Any statement that ownership transferred |
 

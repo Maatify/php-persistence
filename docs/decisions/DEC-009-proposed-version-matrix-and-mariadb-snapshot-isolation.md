@@ -1,14 +1,14 @@
-# DEC-009 — Proposed database version matrix and MariaDB snapshot-isolation handling
+# DEC-009 — MariaDB snapshot-isolation (`1020`) contract (version matrix moved to DEC-013)
 
 - **Decision ID:** `DEC-009`
-- **Title:** Proposed database version matrix and MariaDB snapshot-isolation handling
+- **Title:** MariaDB snapshot-isolation (`1020`) contract (version matrix moved to DEC-013)
 - **Status:** `PROPOSED`
 - **Date:** `2026-10-27`
-- **Decision Authority:** `Project Owner` — not yet ratified. The matrix is an evidence-backed proposal from [Issue #5, comment 6441236923](https://github.com/Maatify/php-persistence/issues/5#issuecomment-6441236923) and [Issue #6](https://github.com/Maatify/php-persistence/issues/6). This record is not implementation authority.
-- **Scope / Concern:** Exact version endpoints for MySQL and MariaDB, the MySQL Innovation track, and the contract for MariaDB error `1020` with `innodb_snapshot_isolation`.
+- **Decision Authority:** `Project Owner` — not yet ratified. The version-matrix rows of this record were ratified on 2026-10-27 and moved to [DEC-013](./DEC-013-test-only-database-version-boundary.md) (partial ratification). The `1020` contract below stays `PROPOSED`/`DEFERRED` by the Owner's decision. This record is not implementation authority.
+- **Scope / Concern:** The contract for MariaDB error `1020` with `innodb_snapshot_isolation` in caller-owned transactions.
 - **Supersedes:** `—`
 - **Superseded By:** `—`
-- **Canonical Contract / Current Owner:** [DATABASE_SUPPORT_AND_TEST_POLICY.md](../architecture/DATABASE_SUPPORT_AND_TEST_POLICY.md) describes the proposal and the required tests. Policy that is already ratified is in [DEC-008](./DEC-008-database-engine-targets-and-verification-policy.md).
+- **Canonical Contract / Current Owner:** [DATABASE_SUPPORT_AND_TEST_POLICY.md](../architecture/DATABASE_SUPPORT_AND_TEST_POLICY.md) describes the hazard and the required tests; the matrix is owned by [DEC-013](./DEC-013-test-only-database-version-boundary.md). Policy already ratified is in [DEC-008](./DEC-008-database-engine-targets-and-verification-policy.md).
 
 ## Context
 
@@ -16,15 +16,8 @@ Version lines were observed on 2026-10-24 and 2026-10-27 from the cited announce
 
 ## Proposal (not ratified)
 
-**Proposed version matrix**
+The version-matrix rows that this record first proposed (endpoints, intermediate cells, the Innovation track and the upper-bound policy) were ratified and are recorded in [DEC-013](./DEC-013-test-only-database-version-boundary.md). They are removed from this record.
 
-| Engine | Proposed oldest endpoint | Intermediate rows | Proposed newest endpoint | Status |
-|---|---|---|---|---|
-| MySQL | `8.0.16` (ratified in DEC-008) | `8.4.13` LTS | `9.7.4` LTS | Newest endpoint and upper-bound policy `PROPOSED` |
-| MySQL Innovation | — | — | `26.10.0` as an optional evaluation row | Not a support promise; not a substitute for the LTS endpoint |
-| MariaDB | `10.11` LTS (`10.11.19` observed) | `11.4.13`, `11.8.9` | `12.3` LTS (`12.3.3` observed) | All bounds `PROPOSED` and `UNVERIFIED` |
-
-Exact image tags or digests are fixed when the Compose definition is written (WU-5), not here.
 
 **Proposed MariaDB `1020` contract**
 
@@ -38,15 +31,13 @@ Exact image tags or digests are fixed when the Compose definition is written (WU
 
 | Open decision | Must be settled before |
 |---|---|
-| MySQL newest endpoint and whether a fixed upper cap exists | WU-5 (CI matrix) and any published MySQL range |
-| MySQL Innovation track: in or out of the declared range | WU-5, and any published statement about Innovation versions |
-| MariaDB oldest and newest endpoints | WU-5 for MariaDB cells, and any MariaDB claim |
 | Whether the safe `1020` contract in item 5 is achievable | WU-8 (Ordering) acceptance for MariaDB, and any MariaDB claim |
+
+Observed engine facts that inform it (defaults of `innodb_snapshot_isolation` per version, error `1020` raised with the setting `ON`) are in [CI_AND_INTEGRATION.md](../architecture/CI_AND_INTEGRATION.md); what the server does after `1020` is still not established.
 
 ## Consequences
 
-- Nothing in this record may be cited as a supported range. The README and Package Reference must not repeat these versions as support claims.
+- Nothing in this record may be cited as a supported range or as a MariaDB support claim.
 - `SUPERSEDED` applies only to a record that was `ACTIVE` ([Decision Governance Standard](../php-engineering-standards/standards/governance/DECISION_GOVERNANCE_STANDARD_AR.md) status model), so it is never the outcome for this `PROPOSED` record.
-- When the Owner ratifies every row, as written or amended, this record is edited to the ratified content and its status becomes `ACTIVE` (`PROPOSED` → `ACTIVE`), with the index updated in the same change.
-- When the Owner ratifies only some rows, the ratified rows move to a new `ACTIVE` record with a new ID, and the rows still open stay here as `PROPOSED` (or `DEFERRED`, if postponed) with the moved rows removed. Neither record uses `Supersedes` or `Superseded By`.
-- A row the Owner declines is recorded as `REJECTED` (a separate record or a clearly marked part of the record that no longer carries the row), not as superseded.
+- When the Owner ratifies the `1020` contract, as written or amended, this record is edited to the ratified content and its status becomes `ACTIVE` (`PROPOSED` → `ACTIVE`), with the index updated in the same change. If it is postponed it becomes `DEFERRED`; if declined, `REJECTED`. It is never `SUPERSEDED`, because it was never `ACTIVE`.
+- The partial ratification of 2026-10-27 moved the version rows to DEC-013; neither record uses `Supersedes` or `Superseded By`.

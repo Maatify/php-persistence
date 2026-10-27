@@ -24,7 +24,7 @@ The constraints are caret ranges, not patch pins. Versions actually resolved on 
 | `composer test:unit` | The `unit` suite |
 | `composer test:regression` | The `regression` suite |
 
-There is deliberately no `test:integration`: no Integration suite and no database service lifecycle exist yet. WU-5 owns that orchestration, and the script is added only together with it.
+`composer test:integration` is the canonical Integration entry (WU-5); `composer test` runs unit, regression and then Integration through it. `composer syntax` and `composer whitespace` give local parity for the CI syntax and whitespace gates. The Integration lifecycle, the Compose definition and the version matrix are in [CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md).
 
 ## 3. PER Coding Style 3.1 coverage
 
@@ -43,16 +43,16 @@ The pinned PHP Coding Style Standard names PHP-FIG **PER Coding Style 3.1** as t
 
 Scope: the script scans every PHP file of the repository except `vendor`, `docs`, `.git` and tool caches, so the root configuration file `.php-cs-fixer.php` and `scripts/` are included. `tests/Regression/PerCodingStyleDeltaCheckTest.php` has an accepting and a rejecting case for each rule and asserts the scan scope.
 
-Limits that remain: the script is a repository-owned verifier written for these eight rules and is not the PHP-FIG reference implementation. The pipe-operator rules cannot be exercised on PHP 8.4 (the PHP version of this delivery); they are reached only when the repository runs on PHP 8.5 or later, so their tests must run in the WU-5 latest-PHP job before they count as evidence. The rest of the 3.1 text is covered by the 3.0 rules the formatter implements. When PHP CS Fixer ships a 3.1 rule set, the configuration moves to it and the script is reduced to what the set does not cover.
+Limits that remain: the script is a repository-owned verifier written for these eight rules and is not the PHP-FIG reference implementation. The pipe-operator rules cannot be exercised on PHP 8.4. Their fixtures (`PerCodingStyleDeltaCheckTest`: a conforming chain, no spaces, operator at the end of a line, unindented continuation) assert the real rules on PHP 8.5 and assert that the verifier refuses the operator on earlier versions; the PHP 8.5 CI cells run the real-rule branch (WU-5). The rest of the 3.1 text is covered by the 3.0 rules the formatter implements. When PHP CS Fixer ships a 3.1 rule set, the configuration moves to it and the script is reduced to what the set does not cover.
 
 ## 4. Planning inputs for WU-5 (not a CI matrix)
 
 Local runs on one PHP version are not a substitute for the CI matrix. WU-5 must provide:
 
-- PHP: the oldest supported minor, `8.4`, and the latest released minor allowed by `^8.4`, for Unit and Regression; Integration on both once it exists.
+- PHP: the oldest supported minor, `8.4`, and the latest released minor allowed by `^8.4`, for Unit, Regression and Integration (implemented in WU-5: [CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md)).
 - Dependencies: a latest-compatible resolution and a lowest-supported resolution (`composer update --prefer-lowest --prefer-stable`) on PHP 8.4, running analysis and tests.
 - Composer: run the dependency-policy audit with Composer 2.10 or later (CI Workflow Standard §5.1), provisioned deterministically by the CI tooling. `composer.json` carries `config.policy` (advisories block and audit `fail`, malware block with scope `all` and audit `fail`, abandoned audit `fail`). The local verification of this policy with Composer 2.10.3 is recorded in section 6.
-- Database services, matrix cells and pinned images per [DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md) and the open items of [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md).
+- Database services, matrix cells and pinned images per [DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md) and [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) (the `1020` contract of DEC-009 stays open).
 - A required gate job, workflow lint, immutable action pinning, and the whitespace check (`git diff --check`).
 
 ## 5. Dependency compatibility checks done in WU-4
@@ -68,4 +68,4 @@ Composer 2.10.3 (`composer.phar` from getcomposer.org, SHA-256 `7a2d379d5b8ffdaa
 - Abandoned audit: in a scratch project with the same policy, an installed abandoned package (`fzaninotto/faker`) makes `composer audit` exit with status 1. The same audit exits 0 when `--abandoned=report` is passed, or when the policy is set to `ignore`; this is why those overrides are prohibited in required gates.
 - Malware policy: the configuration is accepted and reported by Composer 2.10.3. No known malicious package was available to produce a blocking demonstration, so the malware behavior is verified as configuration only.
 
-The scratch projects were outside the repository and were not committed. These are local results; the authoritative gate remains the WU-5 CI job.
+The scratch projects were outside the repository and were not committed. These are local results from WU-4. The authoritative gate is the Compat job of `.github/workflows/ci.yml` (WU-5), which provisions the same Composer 2.10.3 with a SHA-256 check and runs the policy audit on all four PHP and dependency cells.

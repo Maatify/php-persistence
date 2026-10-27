@@ -141,6 +141,46 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         self::assertStringContainsString($message, $errors);
     }
 
+    /**
+     * @return array<string, array{string, string}> source and the message expected on PHP 8.5 or later
+     */
+    public static function pipeViolations(): array
+    {
+        return [
+            'no space around the operator' => ["\$a = \$b|>trim(...);\n", 'needs a space before and after'],
+            'operator at the end of the line' => ["\$a = \$b |>\n    trim(...);\n", 'each line starts with the operator'],
+            'continuation line not indented' => ["\$a = \$b\n|> trim(...);\n", 'must be indented'],
+        ];
+    }
+
+    #[DataProvider('pipeViolations')]
+    public function testPipeOperatorViolations(string $source, string $message): void
+    {
+        [$status, $errors] = self::check($source);
+
+        self::assertSame(1, $status, 'expected a finding');
+        if (PHP_VERSION_ID >= 80500) {
+            self::assertStringContainsString($message, $errors);
+
+            return;
+        }
+        // PHP 8.4 cannot tokenize the operator; the verifier refuses the source instead of passing it.
+        self::assertStringContainsString('pipe operator requires a PHP version', $errors);
+    }
+
+    public function testConformingPipeChainPassesOnPhp85AndIsRefusedOnEarlierVersions(): void
+    {
+        [$status, $errors] = self::check("\$a = \$b\n    |> trim(...)\n    |> strtoupper(...);\n\$c = \$d |> trim(...);\n");
+
+        if (PHP_VERSION_ID >= 80500) {
+            self::assertSame(0, $status, $errors);
+
+            return;
+        }
+        self::assertSame(1, $status);
+        self::assertStringContainsString('pipe operator requires a PHP version', $errors);
+    }
+
     public function testConformingAnonymousClassWithAttributesPasses(): void
     {
         [$status, $errors] = self::check("\$o = new\n    #[Foo]\n    class {};\n");
