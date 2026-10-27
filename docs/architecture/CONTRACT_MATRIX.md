@@ -29,7 +29,7 @@ Paths in columns A and B are relative to `src/` of the legacy repository. Both A
 | OMIT | Not carried. |
 | NEW | Exists in B but not in A. |
 
-Counts over the 21 types of A: RELOCATE 16, RENAME 2, REDESIGN 2, OMIT 1. No type keeps its fully-qualified name, and only the RELOCATE class is a pure namespace change; section 5 lists what each class means for a consumer. Namespace root of C is `Maatify\PhpPersistence\` (written `P\` below), per [DEC-004](../decisions/DEC-004-package-identity-namespace-and-exception-marker.md).
+Counts over the 21 types of A: RELOCATE 16 (of which T-17 also changes a return type), RENAME 2, REDESIGN 2, OMIT 1. No type keeps its fully-qualified name, and only the RELOCATE class is a pure namespace change; section 5 lists what each class means for a consumer. Namespace root of C is `Maatify\PhpPersistence\` (written `P\` below), per [DEC-004](../decisions/DEC-004-package-identity-namespace-and-exception-marker.md).
 
 Column C paths follow [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md) (`ACTIVE`). Folders `Config/`, `Criteria/`, `DTO/`, `Enum/`, `ValueObject/` apply the responsibility vocabulary of the pinned Package Building Standard and are reviewed with this document.
 
@@ -65,7 +65,7 @@ Column C paths follow [DEC-011](../decisions/DEC-011-responsibility-placement-an
 | T-14 | `Pdo/Pagination/PageResult` | same | `P\Pagination\DTO\PageResultDTO` | RENAME | Array and JSON shape unchanged (B-09). |
 | T-15 | `Pdo/Pagination/PaginationConfig` | same | `P\Pagination\Config\PaginationConfig` | RELOCATE | |
 | T-16 | `Pdo/Pagination/PdoPaginationQueryDescriptor` | same | `P\Pagination\Criteria\PdoPaginationQueryDescriptor` | RELOCATE | |
-| T-17 | `Pdo/Pagination/PdoPaginator` | same plus one comment line | `P\Pagination\Repository\PdoPaginator` | RELOCATE | Returns `PageResultDTO`. |
+| T-17 | `Pdo/Pagination/PdoPaginator` | same plus one comment line | `P\Pagination\Repository\PdoPaginator` | RELOCATE, with a return-type change | `paginate()` returns `PageResultDTO` instead of `PageResult` (native return type and `@return` PHPDoc). Parameters unchanged. Not a pure namespace move; see section 6.4. |
 | T-18 | `Pdo/Pagination/SortDirectionEnum` | same | `P\Pagination\Enum\SortDirectionEnum` | RELOCATE | |
 | T-19 | `Pdo/Pagination/SortWhitelist` | same | `P\Pagination\ValueObject\SortWhitelist` | RELOCATE | |
 
@@ -102,7 +102,7 @@ B has 26 files: 24 public plus 2 `@internal`. Of the 24 public types in B, 3 are
 | 1 type omitted (T-09 `OrderingTransactionException`) | No target; a `use` of it has no replacement | Remove the `use` and the dead `catch` |
 | Legacy-`main`-only names (T-24, T-25 `PdoDeadlockRetry*Runner`, T-12, T-26 internals) | Not in `v1.4.0`, so only consumers of unreleased `main` are affected; the two runner names are not carried | Use `PdoTransactionRunner` or `PdoSavepointTransactionRunner` with the retry argument; internals were never public |
 | New type (T-08 `InvalidTransactionConfigurationException`) | Did not exist in `v1.4.0`; a consumer only meets it when passing a retry limit outside `0..3` | None unless the retry argument is used |
-| `PageResult` → `PageResultDTO` | Type hints and `instanceof` | Rename; array and JSON output unchanged |
+| `PageResult` → `PageResultDTO` | Type hints, `instanceof`, and the declared return type of any code that returns or forwards the value of `PdoPaginator::paginate()` | Rename; array and JSON output unchanged |
 | `PersistenceException` → `PhpPersistenceExceptionInterface` | `catch` clauses | Rename; whether consumers catch the old marker was not surveyed (unknown) |
 | Runner behavior | Fail-closed when `beginTransaction()` or `commit()` returns `false`; optional deadlock retry (default 0) | Read B-10 to B-12 |
 | Ordering `moveWithinScope` | Outcome changes in caller-owned transactions (B-03, B-04), originating only in unreleased legacy `main` | Read the behavior contract |
@@ -196,10 +196,15 @@ PdoPaginationQueryDescriptor (final readonly)
 
 PdoPaginator (final readonly, no constructor)
     paginate(PDO $pdo, PdoPaginationQueryDescriptor $query, PageRequest $request,
-             PaginationConfig $config, callable $mapper): PageResult
+             PaginationConfig $config, callable $mapper): PageResult          // legacy A and B
     // @template TItem of array<array-key, mixed>|object
     // @param callable(array<string, mixed>): TItem $mapper
     // @return PageResult<TItem>
+
+    C (new package): same parameters and order,
+    paginate(PDO $pdo, PdoPaginationQueryDescriptor $query, PageRequest $request,
+             PaginationConfig $config, callable $mapper): PageResultDTO
+    // @return PageResultDTO<TItem>      // the return type and the PHPDoc @return change; this is a signature change
 
 PageResult<T> (final readonly, implements JsonSerializable)       // C: PageResultDTO
     __construct(public array $data, public int $page, public int $perPage, public int $total,
@@ -242,4 +247,4 @@ Public types in C: 21. Classes with a declared public constructor: 8 (`ScopedOrd
 
 ### 6.9 Obligation on implementation
 
-The first implementation of each capability adds a test that reflects over the capability's public types and asserts the inventory above (names, parameter order, types, defaults, nullability, return types, `final`, `readonly`, interfaces implemented). Any difference from this section is either a bug or needs a decision record before the code merges.
+The first implementation of each capability adds a test that reflects over the capability's public types and asserts the inventory above (names, parameter order, types, defaults, nullability, return types, `final`, `readonly`, interfaces implemented). The reflection test asserts the C signature of `paginate()` (return type `PageResultDTO`, not `PageResult`). Any difference from this section is either a bug or needs a decision record before the code merges.
