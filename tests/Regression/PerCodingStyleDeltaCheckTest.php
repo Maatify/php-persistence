@@ -63,6 +63,15 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'multi-line case condition wrapped in parentheses' => [
                 "switch (\$a) {\n    case (\n        \$b\n        || \$c\n    ):\n        break;\n}\n",
             ],
+            'deliberate fall-through marked with a comment' => [
+                "switch (\$a) {\n    case 1:\n        \$b = 1;\n        // No break\n    case 2:\n        break;\n}\n",
+            ],
+            'deliberate fall-through with a trailing block comment' => [
+                "switch (\$a) {\n    case 1:\n        \$b = 1; /* Deliberate fall-through */\n    default:\n        break;\n}\n",
+            ],
+            'enum whose method declares an anonymous class with a protected method' => [
+                "enum Suit\n{\n    case Hearts;\n\n    public function f(): object\n    {\n        return new class {\n            protected function g(): void {}\n        };\n    }\n}\n",
+            ],
             'ternary inside a case label' => ["switch (\$a) {\n    case \$b ? 1 : 2:\n        break;\n}\n"],
             'enum with private constant and method' => [
                 "enum Suit: string\n{\n    case Hearts = 'H';\n\n    private const X = 1;\n\n    private function f(): void {}\n}\n",
@@ -101,6 +110,19 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
             'multi-line case condition with closing parenthesis not alone' => [
                 "switch (\$a) {\n    case (\n        \$b\n        || \$c):\n        break;\n}\n",
                 'stand alone on the last line',
+            ],
+            'fall-through comment on the last case does not excuse it' => [
+                "switch (\$a) {\n    case 1:\n        break;\n    default:\n        \$b = 1;\n        // No break\n}\n",
+                'must end with a terminating statement',
+            ],
+            'unrelated comment does not excuse a fall-through' => [
+                "switch (\$a) {\n    case 1:\n        \$b = 1;\n        // set b\n    case 2:\n        break;\n}\n",
+                'must end with a terminating statement',
+            ],
+            'enum with protected constant' => ["enum Suit\n{\n    case Hearts;\n\n    protected const X = 1;\n}\n", 'private instead of protected'],
+            'enum with protected method next to an anonymous class' => [
+                "enum Suit\n{\n    case Hearts;\n\n    protected function f(): object\n    {\n        return new class {};\n    }\n}\n",
+                'private instead of protected',
             ],
             'switch with alternative syntax' => ["switch (\$a):\n    case 1:\n        break;\nendswitch;\n", 'alternative syntax'],
             'enum with protected member' => ["enum Suit\n{\n    case Hearts;\n\n    protected function f(): void {}\n}\n", 'private instead of protected'],
@@ -144,14 +166,13 @@ final class PerCodingStyleDeltaCheckTest extends TestCase
         self::assertGreaterThan(0, $scanned, $output);
         $expected = 0;
         $root = dirname(__DIR__, 2);
-        $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS));
-        foreach ($iterator as $entry) {
-            self::assertInstanceOf(\SplFileInfo::class, $entry);
-            if (str_contains($entry->getPathname(), '/vendor/') || str_contains($entry->getPathname(), '/.git/')) {
-                continue;
-            }
-            $path = str_replace($root . '/', '', $entry->getPathname());
-            if ($entry->getExtension() === 'php' && preg_match('#^(vendor|\.git|docs|node_modules|\.phpunit\.cache)/#', $path) !== 1) {
+        $skipped = ['vendor', '.git', 'docs', 'node_modules', '.phpunit.cache', '.phpstan'];
+        $filter = new \RecursiveCallbackFilterIterator(
+            new \RecursiveDirectoryIterator($root, \FilesystemIterator::SKIP_DOTS),
+            static fn(\SplFileInfo $entry): bool => !($entry->isDir() && in_array($entry->getFilename(), $skipped, true)),
+        );
+        foreach (new \RecursiveIteratorIterator($filter) as $entry) {
+            if ($entry instanceof \SplFileInfo && $entry->getExtension() === 'php') {
                 $expected++;
             }
         }

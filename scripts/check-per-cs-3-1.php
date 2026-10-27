@@ -11,7 +11,8 @@ declare(strict_types=1);
  *
  *  1. clone is written with parentheses;
  *  2. switch: a case body is not wrapped in braces, every non-empty case ends with a
- *     terminating statement (also the last one), and a multi-line case condition is
+ *     terminating statement (also the last one) unless a comment marks a deliberate
+ *     fall-through into the next case, and a multi-line case condition is
  *     wrapped in parentheses whose closing parenthesis and colon stand alone on the
  *     last line;
  *  3. the pipe operator has a space on both sides;
@@ -164,9 +165,10 @@ function checkClone(string $file, array $sig): array
 
 /**
  * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @param list<array{line: int, text: string}> $comments
  * @return list<string>
  */
-function checkSwitch(string $file, array $sig): array
+function checkSwitch(string $file, array $sig, array $comments): array
 {
     $findings = [];
     foreach ($sig as $i => $token) {
@@ -209,7 +211,7 @@ function checkSwitch(string $file, array $sig): array
 
         foreach ($labels as $position => $label) {
             $limit = isset($labels[$position + 1]) ? $labels[$position + 1]['start'] : $close;
-            array_push($findings, ...checkCase($file, $sig, $label['start'], $label['colon'], $limit));
+            array_push($findings, ...checkCase($file, $sig, $comments, $label['start'], $label['colon'], $limit, isset($labels[$position + 1])));
         }
     }
 
@@ -252,9 +254,10 @@ function labelColon(array $sig, int $start, int $limit): ?int
 
 /**
  * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @param list<array{line: int, text: string}> $comments
  * @return list<string>
  */
-function checkCase(string $file, array $sig, int $start, int $colon, int $limit): array
+function checkCase(string $file, array $sig, array $comments, int $start, int $colon, int $limit, bool $hasNextCase): array
 {
     $findings = [];
     $label = $sig[$start];
@@ -283,11 +286,36 @@ function checkCase(string $file, array $sig, int $start, int $colon, int $limit)
         return $findings;
     }
 
-    if ($sig[$last]['id'] !== ';' || !endsWithTerminator($sig, $first, $last)) {
+    $terminated = $sig[$last]['id'] === ';' && endsWithTerminator($sig, $first, $last);
+    if (!$terminated && $hasNextCase && hasFallThroughComment($comments, $sig[$last]['line'], $sig[$limit]['line'])) {
+        return $findings;
+    }
+
+    if (!$terminated) {
         $findings[] = $file . ':' . $label['line'] . ': a non-empty case must end with a terminating statement (break, continue, return, throw, goto, exit)';
     }
 
     return $findings;
+}
+
+/**
+ * True when a comment between the last statement of a case and the next case marks the
+ * missing terminating statement as deliberate ("No break", "Deliberate fall-through").
+ *
+ * @param list<array{line: int, text: string}> $comments
+ */
+function hasFallThroughComment(array $comments, int $lastStatementLine, int $nextCaseLine): bool
+{
+    foreach ($comments as $comment) {
+        if ($comment['line'] < $lastStatementLine || $comment['line'] > $nextCaseLine) {
+            continue;
+        }
+        if (preg_match('/\b(no[ -]?break|fall[ -]?through|fell through)\b/i', $comment['text']) === 1) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 /**
@@ -520,6 +548,12 @@ function checkEnumMembers(string $file, array $sig): array
             continue;
         }
         for ($k = $open + 1; $k < $close; $k++) {
+            if ($sig[$k]['id'] === '{') {
+                // Method bodies and nested classes are not members of the enum.
+                $k = matching($sig, $k) ?? $k;
+
+                continue;
+            }
             if ($sig[$k]['id'] === T_PROTECTED) {
                 $findings[] = $file . ':' . $sig[$k]['line'] . ': enum members use private instead of protected';
             }
@@ -560,10 +594,16 @@ function checkSource(string $file, string $source): array
     $tokens = tokenize($source);
     $sig = significant($tokens);
     $lines = explode("\n", $source);
+    $comments = [];
+    foreach ($tokens as $token) {
+        if ($token['id'] === T_COMMENT || $token['id'] === T_DOC_COMMENT) {
+            $comments[] = ['line' => $token['line'], 'text' => $token['text']];
+        }
+    }
 
     return [
         ...checkClone($file, $sig),
-        ...checkSwitch($file, $sig),
+        ...checkSwitch($file, $sig, $comments),
         ...checkPipe($file, $tokens, $lines),
         ...checkEmptyClosure($file, $tokens, $sig),
         ...checkAnonymousClassAttributes($file, $sig, $lines),

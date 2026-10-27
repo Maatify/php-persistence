@@ -33,12 +33,12 @@ The pinned PHP Coding Style Standard names PHP-FIG **PER Coding Style 3.1** as t
 | 3.1 change | Verification |
 |---|---|
 | `clone` always with parentheses | script: `clone` must be followed by `(` |
-| `case` body not wrapped in braces; every non-empty `case` ends with a terminating statement, also the last; multi-line `case` condition in parentheses with `)` and `:` alone on the last line | script: parses every `switch` block, accepts conforming switches and rejects the others |
+| `case` body not wrapped in braces; every non-empty `case` ends with a terminating statement, also the last; multi-line `case` condition in parentheses with `)` and `:` alone on the last line | script: parses every `switch` block, accepts conforming switches and rejects the others. A non-empty case that falls through to the next case is accepted only with a clear comment ("No break", "Deliberate fall-through"), as the specification requires; the last case must always terminate |
 | Pipe operator `\|>` spaced on both sides | script: checks spacing when the tokenizer supports the operator (PHP 8.5+); on PHP 8.4 the syntax does not parse, so the syntax check rejects it first |
 | Split pipe chain starts each line with the operator, continuation lines indented | script, same condition as above |
 | Empty closure written as `{}` after one space on the same line | script |
 | Attributes on anonymous classes start on the line after `new`, indented once, class declaration on its own line with the same indentation | script |
-| Enum constants follow the `private` instead of `protected` rule (as methods already did) | script: no `protected` member inside an `enum` body |
+| Enum constants follow the `private` instead of `protected` rule (as methods already did) | script: no `protected` member at the level of an `enum` body; method bodies and classes nested inside the enum are not enum members and are not checked by this rule |
 | Opening bracket of a multi-line array not alone on its line, in all contexts | script |
 
 Scope: the script scans every PHP file of the repository except `vendor`, `docs`, `.git` and tool caches, so the root configuration file `.php-cs-fixer.php` and `scripts/` are included. `tests/Regression/PerCodingStyleDeltaCheckTest.php` has an accepting and a rejecting case for each rule and asserts the scan scope.
