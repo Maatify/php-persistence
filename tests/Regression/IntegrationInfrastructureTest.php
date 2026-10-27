@@ -132,6 +132,21 @@ final class IntegrationInfrastructureTest extends TestCase
         }
     }
 
+    public function testRatifiedBoundaryRecordMatchesTheMatrix(): void
+    {
+        $decision = self::read('docs/decisions/DEC-013-test-only-database-version-boundary.md');
+
+        self::assertStringContainsString('**Status:** `ACTIVE`', $decision);
+        foreach (self::cells() as $cell) {
+            self::assertStringContainsString('`' . $cell['tag'] . '`', $decision, $cell['tag'] . ' must be named in DEC-013');
+        }
+        self::assertStringContainsString('exploratory cell only', $decision);
+
+        $open = self::read('docs/decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md');
+        self::assertStringContainsString('**Status:** `PROPOSED`', $open);
+        self::assertStringNotContainsString('9.7.4', $open, 'the ratified version rows are removed from the still-proposed record');
+    }
+
     public function testWorkflowFollowsTheHardeningRules(): void
     {
         $workflow = self::read('.github/workflows/ci.yml');

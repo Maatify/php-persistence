@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "default": "mysql-8.4.13",
-  "note": "Test-matrix candidates. Only the MySQL 8.0.16 minimum is ratified (DEC-008). The other versions come from the proposed DEC-009 and are not support claims.",
+  "note": "Ratified test matrix (DEC-013; the MySQL 8.0.16 minimum is also DEC-008). Not support claims; the exploratory cell is never required.",
   "cells": {
     "mysql-8.0.16": {
       "engine": "mysql",

@@ -2,7 +2,7 @@
 
 Status: policy and requirements for WU-5 and later. Nothing here is a support claim. No test was run for this document and this repository has no CI.
 
-Ratified policy: [DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md). Unratified version choices and the MariaDB `1020` contract: [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) (`PROPOSED`).
+Ratified policy: [DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md). Test-only version boundary: [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) (`ACTIVE`). MariaDB `1020` contract: [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) (`PROPOSED`).
 
 ## 1. Support states
 
@@ -20,10 +20,10 @@ Current state (2026-10-27): MySQL and MariaDB are design targets. Nothing is ver
 
 | Engine | Ratified | Proposed or open |
 |---|---|---|
-| MySQL | Minimum `8.0.16` | Newest endpoint (`9.7.4` LTS proposed), intermediate `8.4.13` LTS, upper-bound policy, Innovation track (`26.10.0`) |
-| MariaDB | Target engine (independent from MySQL) | Oldest (`10.11` LTS proposed), intermediates (`11.4.13`, `11.8.9`), newest (`12.3` LTS proposed) |
+| MySQL | Minimum `8.0.16` (DEC-008); test matrix `8.0.16`, `8.4.13`, `9.7.4` (DEC-013); Innovation `26.10.0` exploratory only | Nothing about the version matrix; a support range still needs the endpoint rule and tested capabilities |
+| MariaDB | Target engine (independent from MySQL); test matrix `10.11.19`, `11.4.13`, `11.8.9`, `12.3.3` (DEC-013) | The `1020` contract (DEC-009, `PROPOSED`); a support range additionally waits for it |
 
-Version numbers come from the vendors' announcements cited in DEC-009 and are re-checked when WU-5 fixes image tags or digests.
+Version numbers come from the vendors' announcements; the exact tags and digests are pinned in `docker/integration-matrix.json` (WU-5).
 
 ## 3. PHP and dependency axes
 

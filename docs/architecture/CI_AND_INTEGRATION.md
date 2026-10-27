@@ -1,6 +1,6 @@
 # CI and Integration Infrastructure (WU-5)
 
-Status: describes the CI workflow and the real-database Integration infrastructure introduced by WU-5. It is infrastructure, not a support claim. MySQL and MariaDB remain design targets ([DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md)); the version cells below are test-matrix candidates, and only the MySQL `8.0.16` minimum is ratified ([DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md)). The Integration tests prove properties of the real servers and of `pdo_mysql`. They do not verify any Transaction, Ordering or Pagination behavior of this package, because none of it exists yet.
+Status: describes the CI workflow and the real-database Integration infrastructure introduced by WU-5. It is infrastructure, not a support claim. MySQL and MariaDB remain design targets ([DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md)); the version cells below are the test matrix ratified in [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) (the MySQL `8.0.16` minimum is also [DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md)); they are not support ranges. The Integration tests prove properties of the real servers and of `pdo_mysql`. They do not verify any Transaction, Ordering or Pagination behavior of this package, because none of it exists yet.
 
 ## 1. Local and CI parity
 
@@ -71,16 +71,16 @@ One parameterized Compose definition (`compose.integration.yaml`) serves every c
 
 | Cell | Tier | Image (tag and index digest) | Platforms | CI | Status |
 |---|---|---|---|---|---|
-| `mysql-8.0.16` | endpoint, oldest | `mysql:8.0.16@sha256:5d11283aee9b73509b737785e0ad79a2d9abf51f4abf3f221702a8add0e36bf2` | `linux/amd64` only | PHP 8.4, 8.5 | minimum ratified by DEC-008 |
-| `mysql-8.4.13` | intermediate (LTS line) | `mysql:8.4.13@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69` | amd64, arm64 | PHP 8.4 | candidate |
-| `mysql-9.7.4` | endpoint, newest | `mysql:9.7.4@sha256:8fb11c38b3551e22d50adbb688f027f8ff4ea2d2445aa277c1cc97b4af85ec54` | amd64, arm64 | PHP 8.4, 8.5 | candidate |
+| `mysql-8.0.16` | endpoint, oldest | `mysql:8.0.16@sha256:5d11283aee9b73509b737785e0ad79a2d9abf51f4abf3f221702a8add0e36bf2` | `linux/amd64` only | PHP 8.4, 8.5 | minimum ratified by DEC-008; test cell (DEC-013) |
+| `mysql-8.4.13` | intermediate (LTS line) | `mysql:8.4.13@sha256:76f0358884cb92d9a086d24e5671c38048d3fef40f2588703d73eb55392d6b69` | amd64, arm64 | PHP 8.4 | ratified test cell (DEC-013) |
+| `mysql-9.7.4` | endpoint, newest | `mysql:9.7.4@sha256:8fb11c38b3551e22d50adbb688f027f8ff4ea2d2445aa277c1cc97b4af85ec54` | amd64, arm64 | PHP 8.4, 8.5 | ratified test cell (DEC-013) |
 | `mysql-26.10.0` | exploratory (Innovation) | `mysql:26.10.0@sha256:f51c9c01c16b0eb5d81bb70ab7e7fcb3b96abc6a54114be3a94e8e569cae7815` | amd64, arm64 | manual dispatch only, not required | exploratory |
-| `mariadb-10.11.19` | endpoint, oldest | `mariadb:10.11.19@sha256:d769e37960821dfdcf096954f6e7ac89f747e116c1bba98e48edd265dfc7deae` | amd64, arm64, ppc64le, s390x | PHP 8.4, 8.5 | candidate |
-| `mariadb-11.4.13` | intermediate (LTS line) | `mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620` | same | PHP 8.4 | candidate |
-| `mariadb-11.8.9` | intermediate (LTS line) | `mariadb:11.8.9@sha256:c4124d1afa875e47f2892edf26b482fa54f796e2f342d3717a04ca091a22a9bd` | same | PHP 8.4 | candidate |
-| `mariadb-12.3.3` | endpoint, newest | `mariadb:12.3.3@sha256:d46e102fa8b9b72bfcdeb56f9dd538742092119dc8b11f31fe662605cd234cd9` | same | PHP 8.4, 8.5 | candidate |
+| `mariadb-10.11.19` | endpoint, oldest | `mariadb:10.11.19@sha256:d769e37960821dfdcf096954f6e7ac89f747e116c1bba98e48edd265dfc7deae` | amd64, arm64, ppc64le, s390x | PHP 8.4, 8.5 | ratified test cell (DEC-013) |
+| `mariadb-11.4.13` | intermediate (LTS line) | `mariadb:11.4.13@sha256:d1891ede5a559f1086f55053bb8cc1569b0298338c4d72d71725a7f74f6ba620` | same | PHP 8.4 | ratified test cell (DEC-013) |
+| `mariadb-11.8.9` | intermediate (LTS line) | `mariadb:11.8.9@sha256:c4124d1afa875e47f2892edf26b482fa54f796e2f342d3717a04ca091a22a9bd` | same | PHP 8.4 | ratified test cell (DEC-013) |
+| `mariadb-12.3.3` | endpoint, newest | `mariadb:12.3.3@sha256:d46e102fa8b9b72bfcdeb56f9dd538742092119dc8b11f31fe662605cd234cd9` | same | PHP 8.4, 8.5 | ratified test cell (DEC-013) |
 
-PHP axis: the oldest supported minor `8.4` and the latest released minor `8.5` (current patches 8.4.27 and 8.5.12 observed on Docker Hub and php.net). Each engine endpoint runs on both PHP minors; the intermediate LTS cells run on `8.4` to avoid a full cross product without a risk that justifies it. Compat runs `{8.4, 8.5} × {latest, lowest}` dependencies. "Candidate" means the cell is a test target proposed in [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md), which is `PROPOSED`; a passing cell is test evidence for that cell, not a support range, and the declared range is not widened by this work unit.
+PHP axis: the oldest supported minor `8.4` and the latest released minor `8.5` (current patches 8.4.27 and 8.5.12 observed on Docker Hub and php.net). Each engine endpoint runs on both PHP minors; the intermediate LTS cells run on `8.4` to avoid a full cross product without a risk that justifies it. Compat runs `{8.4, 8.5} × {latest, lowest}` dependencies. A passing cell is test evidence for that cell, not a support range; the declared range is not widened by this work unit.
 
 ### Image provenance evidence (2026-10-27)
 
@@ -101,23 +101,9 @@ PHP axis: the oldest supported minor `8.4` and the latest released minor `8.5` (
 
 "Raised" means a locking read and an `UPDATE` after an older `REPEATABLE READ` snapshot failed with driver error `1020` when the test set the session variable to `ON`. The tests set the variable only on their own connections of the disposable service. What the server does after `1020` (whether it already ended the transaction) is deliberately not asserted because it differs between versions; this remains an open point of DEC-009 and of the WU-8 contract.
 
-## 4. Owner decision request (one decision)
+## 4. Decision record
 
-The CI matrix above uses the versions of Issue #10 as test cells. They rely on proposals of DEC-009, which is not ACTIVE, so they are marked "candidate" everywhere and no support range is declared.
-
-Decision: ratify the test-only version boundary, scoped as follows.
-
-| Item | Recommended | Alternative |
-|---|---|---|
-| MySQL endpoints | `8.0.16` (already ratified) and `9.7.4` | Keep `8.4.13` as the newest endpoint until `9.7.4` has run for a period |
-| MySQL intermediate | `8.4.13` | none |
-| MySQL Innovation `26.10.0` | outside the declared range, exploratory only | include as a required cell |
-| MariaDB endpoints | `10.11.19` and `12.3.3` | Start at `11.4.13`, dropping `10.11` |
-| MariaDB intermediates | `11.4.13`, `11.8.9` | none |
-| Upper bound | the highest actually verified endpoint, no promise for later majors | fixed cap |
-| `1020` contract | left `PROPOSED` / `DEFERRED` | ratify a contract |
-
-Evidence: every candidate image exists and ran on the real engine (section 5); the matrix passed on the candidate cells. Recommendation: ratify the first column through the partial-ratification path of DEC-009 (a new `ACTIVE` record for the version boundary, with the ratified rows removed from the still-`PROPOSED` record) in the same change as the first work unit that relies on it. This pull request does not change DEC-009.
+The Project Owner approved the test-only version boundary on 2026-10-27 exactly as recommended, and it is recorded in [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) through the partial-ratification path of [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md): MySQL `8.0.16`, `8.4.13`, `9.7.4`; MariaDB `10.11.19`, `11.4.13`, `11.8.9`, `12.3.3`; MySQL Innovation `26.10.0` exploratory only; the upper edge capped at the highest verified endpoint. The MariaDB `1020` contract stays `PROPOSED`/`DEFERRED` in DEC-009. This is a decision about the test matrix, not a support claim.
 
 ## 5. Evidence
 
