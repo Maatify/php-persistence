@@ -104,3 +104,137 @@ B has 26 files: 24 public plus 2 `@internal`. Of the 24 public types in B, 3 are
 | `OrderingTransactionException` | Removed; the legacy code does not throw it | Delete `catch` clauses |
 
 Consumer migration itself needs separate authorization ([DEC-006](../decisions/DEC-006-successor-intent-and-standards-ownership-boundary.md)).
+
+## 6. Public API inventory
+
+Every public member of every public type, taken from legacy `main` (`1f6a7aa`) with the `v1.4.0` difference stated per row. Types are in short names; the new FQCN is in section 3. Parameter names, types and defaults are literal; they are part of the contract because PHP allows named arguments. Source of the rows: the files at the pinned commit, read in WU-3 review; they are not a test result. The work unit that ports a type re-reads the file at the then-current SHA and adds a reflection test that reproduces this inventory (see section 6.9).
+
+Conventions: all classes are `final`; `readonly` is shown when declared; `$x = v` is a default. Private and `@internal` members are out of scope. Constructor-promoted properties are public readonly properties and are listed with the constructor.
+
+### 6.1 Exceptions
+
+| Type | Kind and base (legacy) | Declared members | `v1.4.0` | C (new package) |
+|---|---|---|---|---|
+| `PersistenceException` | interface extending `Throwable` | none | same | `PhpPersistenceExceptionInterface`, same shape |
+| `InvalidOrderingConfigurationException` | final class, `SystemMaatifyException` + marker | `protected defaultErrorCode(): ErrorCodeInterface` only | same | same |
+| `InvalidOrderingOperationException` | final class, `ValidationMaatifyException` + marker | `protected defaultErrorCode()` only | same (docblock differs) | same |
+| `InvalidPaginationConfigurationException` | final class, `SystemMaatifyException` + marker | `protected defaultErrorCode()` only | same | same |
+| `InvalidPaginationQueryException` | final class, `SystemMaatifyException` + marker | `protected defaultErrorCode()` only | same | same |
+| `PaginationExecutionException` | final class, `SystemMaatifyException` + marker | `protected defaultErrorCode()` only | same | same |
+| `TransactionExecutionException` | final class, `SystemMaatifyException` + marker | `protected defaultErrorCode()` only | same | same |
+| `InvalidTransactionConfigurationException` | final class, `SystemMaatifyException` + marker | `protected defaultErrorCode()` only | absent | NEW in C vs A |
+| `OrderingTransactionException` | final class, `UnsupportedMaatifyException` + marker, `@deprecated`, also overrides `protected defaultIsSafe(): bool` | none public | present | omitted |
+
+The exceptions declare no public constructor; construction is inherited from the `maatify/exceptions` base classes, so their public surface (constructor arguments, accessors) is owned by that package and its lowest supported version is exercised in WU-4 (B-15).
+
+### 6.2 `ScopedOrderingConfig` (`final readonly`)
+
+```text
+__construct(
+    public string  $table,
+    public ?string $scopeColumn     = null,
+    public string  $idColumn        = 'id',
+    public string  $orderColumn     = 'display_order',
+    public ?string $deletedAtColumn = 'deleted_at',
+    public bool    $nullableScope   = false,
+    public ?string $updatedAtColumn = null,
+)
+quotedTable(): string
+quotedIdColumn(): string
+quotedOrderColumn(): string
+quotedScopeColumn(): ?string
+quotedDeletedAtColumn(): ?string
+quotedUpdatedAtColumn(): ?string
+```
+
+The constructor validates identifiers and throws `InvalidOrderingConfigurationException`. Same in `v1.4.0`.
+
+### 6.3 `ScopedOrderingManager` (`final readonly`, no constructor)
+
+```text
+getNextPosition(PDO $pdo, ScopedOrderingConfig $config, int|string|null $scopeValue = null): int
+getNextPositionForUpdate(PDO $pdo, ScopedOrderingConfig $config, int|string|null $scopeValue = null): int      // B only
+moveWithinScope(PDO $pdo, ScopedOrderingConfig $config, int|string|null $scopeValue, int $id, int $newOrder, ?string $updatedAtValue = null): bool
+rowExistsInScope(PDO $pdo, ScopedOrderingConfig $config, int|string|null $scopeValue, int $id): bool
+```
+
+`getNextPosition`, `moveWithinScope` and `rowExistsInScope` have the same signatures in `v1.4.0`; only behavior differs (B-03 to B-05). `getNextPositionForUpdate` does not exist in `v1.4.0`. Documented throws: `InvalidOrderingOperationException` and `Throwable` for database failures.
+
+### 6.4 Pagination types
+
+```text
+PageRequest (final readonly)
+    __construct(public int|string|null $page = null, public int|string|null $perPage = null,
+                public ?string $sortBy = null, public ?string $sortDirection = null)
+
+PaginationConfig (final readonly)
+    __construct(public SortWhitelist $sortWhitelist, public string $defaultSortBy,
+                public SortDirectionEnum $defaultSortDirection, public string $tieBreakerSortBy,
+                public SortDirectionEnum $tieBreakerDirection, public int $defaultPerPage = 20,
+                public int $minPerPage = 1, public int $maxPerPage = 200)
+    // throws InvalidPaginationConfigurationException when: minPerPage < 1, maxPerPage < minPerPage,
+    // defaultPerPage outside [minPerPage, maxPerPage], or defaultSortBy / tieBreakerSortBy is not a
+    // valid public key present in the whitelist
+
+SortWhitelist (final readonly)
+    __construct(array $sorts)                       // non-empty-array<non-empty-string, non-empty-string>
+    contains(string $key): bool
+    quotedIdentifierFor(string $key): string        // throws InvalidPaginationConfigurationException for an unknown key
+
+enum SortDirectionEnum: string        // cases ASC = 'ASC', DESC = 'DESC'
+
+PdoPaginationQueryDescriptor (final readonly)
+    __construct(public string $totalSql, public array $totalParams, public string $filteredCountSql,
+                public array $filteredCountParams, public string $dataSql, public array $dataParams)
+    // each *Params is array<string, string|int|bool|null>; names matching ^[A-Za-z_][A-Za-z0-9_]*$;
+    // prefix __pagination_ is reserved
+
+PdoPaginator (final readonly, no constructor)
+    paginate(PDO $pdo, PdoPaginationQueryDescriptor $query, PageRequest $request,
+             PaginationConfig $config, callable $mapper): PageResult
+    // @template TItem of array<array-key, mixed>|object
+    // @param callable(array<string, mixed>): TItem $mapper
+    // @return PageResult<TItem>
+
+PageResult<T> (final readonly, implements JsonSerializable)       // C: PageResultDTO
+    __construct(public array $data, public int $page, public int $perPage, public int $total,
+                public int $filtered, public int $totalPages, public bool $hasNext,
+                public bool $hasPrevious, public string $sortBy, public SortDirectionEnum $sortDirection)
+    toArray(): array       // shape in B-09
+    jsonSerialize(): array // returns toArray()
+```
+
+The property names of `PageResult` (`hasNext`, `hasPrevious`, `perPage`, `totalPages`, `sortBy`, `sortDirection`) are public API and are kept in `PageResultDTO`; only the array keys use snake_case (B-09). All pagination types are unchanged between `v1.4.0` and B except one comment line in `PdoPaginator`.
+
+### 6.5 Transaction interfaces
+
+```text
+interface TransactionRunnerInterface
+    run(callable $callback): mixed        // @template TResult; @param callable(): TResult; @return TResult
+interface SavepointTransactionRunnerInterface extends TransactionRunnerInterface      // no added members
+```
+
+Unchanged since `v1.4.0`.
+
+### 6.6 Transaction runners
+
+| Type (final readonly) | `v1.4.0` | B | C |
+|---|---|---|---|
+| `PdoTransactionRunner` | `__construct(private PDO $pdo)`; `run(callable $callback): mixed`; Gen1 | same, `@deprecated` | `__construct(private PDO $pdo, int $maxDeadlockRetries = 0)`; `run(callable $callback): mixed`; Gen2 |
+| `PdoSavepointTransactionRunner` | `__construct(private PDO $pdo)`; `run(callable $callback): mixed`; Gen1 | same, `@deprecated` | `__construct(private PDO $pdo, int $maxDeadlockRetries = 0)`; `run(callable $callback): mixed`; Gen2 |
+| `PdoDeadlockRetryTransactionRunner` | absent | `__construct(private PDO $pdo, int $maxDeadlockRetries = 0)`; `run(...)` | name not carried; role is `PdoTransactionRunner` in C |
+| `PdoDeadlockRetrySavepointTransactionRunner` | absent | `__construct(private PDO $pdo, int $maxDeadlockRetries = 0)`; `run(...)` | name not carried; role is `PdoSavepointTransactionRunner` in C |
+
+Consequences: a `v1.4.0` call `new PdoTransactionRunner($pdo)` stays valid in C and now behaves as Gen2 with retry off. `maxDeadlockRetries` outside `0..3` throws `InvalidTransactionConfigurationException`. The constructor parameter is a name in the public contract; renaming it later is a breaking change.
+
+### 6.7 Types without public API
+
+`OperationSavepoint` and `OwnedTransactionExecutor` are `@internal`. Their public members are not part of the contract and not inventoried. `OwnedTransactionExecutor::MAX_DEADLOCK_RETRIES` (`3`) is a public constant of an internal class; if the redesigned executor keeps the limit, it must be documented through the runners' constructor, not through the internal class.
+
+### 6.8 Counts
+
+Public types in C: 21. Classes with a declared public constructor: 8 (`ScopedOrderingConfig`, `PageRequest`, `PaginationConfig`, `SortWhitelist`, `PdoPaginationQueryDescriptor`, `PageResultDTO`, `PdoTransactionRunner`, `PdoSavepointTransactionRunner`). Declared public methods other than constructors: 18 (manager 4, `ScopedOrderingConfig` 6, `SortWhitelist` 2, `PdoPaginator` 1, `PageResultDTO` 2, `TransactionRunnerInterface` 1, two runners 1 each; the savepoint interface adds none). These counts are derived from sections 6.2 to 6.6 and must equal the reflection output of the first implementation.
+
+### 6.9 Obligation on implementation
+
+The first implementation of each capability adds a test that reflects over the capability's public types and asserts the inventory above (names, parameter order, types, defaults, nullability, return types, `final`, `readonly`, interfaces implemented). Any difference from this section is either a bug or needs a decision record before the code merges.
