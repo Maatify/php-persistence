@@ -86,6 +86,18 @@ PHP axis: the oldest supported minor `8.4` and the latest released minor `8.5` (
 - All images are pinned by `tag@digest`; a mutable tag alone is never used. Re-pinning is a deliberate change of `docker/integration-matrix.json` reviewed with its own evidence.
 - The orchestration compares `SELECT VERSION()` with the cell's expected version and fails on a mismatch, so a retagged image cannot pass silently.
 
+### Observed server facts (images of 2026-10-27, from the Integration runs)
+
+| Cell | `SELECT VERSION()` | Default `innodb_snapshot_isolation` | Error `1020` with the setting ON | Locking read after an older snapshot with the setting OFF or absent |
+|---|---|---|---|---|
+| `mysql-8.0.16`, `mysql-8.4.13`, `mysql-9.7.4`, `mysql-26.10.0` | `8.0.16`, `8.4.13`, `9.7.4`, `26.10.0` | variable absent | not applicable | sees the latest committed row |
+| `mariadb-10.11.19` | `10.11.19-MariaDB-ubu2204` | `OFF` | raised | sees the latest committed row |
+| `mariadb-11.4.13` | `11.4.13-MariaDB-ubu2404` | `OFF` | raised | sees the latest committed row |
+| `mariadb-11.8.9` | `11.8.9-MariaDB-ubu2404` | `ON` | raised | sees the latest committed row |
+| `mariadb-12.3.3` | `12.3.3-MariaDB-ubu2404` | `ON` | raised | sees the latest committed row |
+
+"Raised" means a locking read and an `UPDATE` after an older `REPEATABLE READ` snapshot failed with driver error `1020` when the test set the session variable to `ON`. The tests set the variable only on their own connections of the disposable service. What the server does after `1020` (whether it already ended the transaction) is deliberately not asserted because it differs between versions; this remains an open point of DEC-009 and of the WU-8 contract.
+
 ## 4. Owner decision request (one decision)
 
 The CI matrix above uses the versions of Issue #10 as test cells. They rely on proposals of DEC-009, which is not ACTIVE, so they are marked "candidate" everywhere and no support range is declared.
