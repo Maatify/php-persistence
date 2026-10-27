@@ -29,7 +29,7 @@ Paths in columns A and B are relative to `src/` of the legacy repository. Both A
 | OMIT | Not carried. |
 | NEW | Exists in B but not in A. |
 
-Counts over the 21 types of A: RELOCATE 16, RENAME 2, REDESIGN 2, OMIT 1. No type keeps its fully-qualified name. Namespace root of C is `Maatify\PhpPersistence\` (written `P\` below), per [DEC-004](../decisions/DEC-004-package-identity-namespace-and-exception-marker.md).
+Counts over the 21 types of A: RELOCATE 16, RENAME 2, REDESIGN 2, OMIT 1. No type keeps its fully-qualified name, and only the RELOCATE class is a pure namespace change; section 5 lists what each class means for a consumer. Namespace root of C is `Maatify\PhpPersistence\` (written `P\` below), per [DEC-004](../decisions/DEC-004-package-identity-namespace-and-exception-marker.md).
 
 Column C paths are proposals until [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md) is decided. Folders `Config/`, `Criteria/`, `DTO/`, `Enum/`, `ValueObject/` apply the responsibility vocabulary of the pinned Package Building Standard and are reviewed with this document.
 
@@ -96,7 +96,12 @@ B has 26 files: 24 public plus 2 `@internal`. Of the 24 public types in B, 3 are
 | Change | Effect on a consumer | Migration |
 |---|---|---|
 | Package name | New `require` line | Replace; both can stay installed ([DEC-005](../decisions/DEC-005-coexistence-with-legacy-package.md)) |
-| Every FQCN | New `use` statements | Mechanical, 1:1 by section 3 |
+| 16 types kept (RELOCATE: T-02 to T-07, T-10, T-11, T-13, T-15 to T-21) | New `use` statements; the `Pdo\` segment disappears and a capability folder appears, so this is a per-type rewrite from section 3, not a prefix replacement | Mechanical per type, after looking it up in section 3 |
+| 2 types renamed (T-01 marker, T-14 `PageResult`) | Different short name as well as namespace: `use`, type hints, `catch`, `instanceof` | Rename by hand using section 3 |
+| 2 types redesigned (T-22, T-23: the two runners) | Same short name, new FQCN, new behavior (B-10 to B-12) and a new optional constructor argument | Not mechanical: read the behavior contract before switching |
+| 1 type omitted (T-09 `OrderingTransactionException`) | No target; a `use` of it has no replacement | Remove the `use` and the dead `catch` |
+| Legacy-`main`-only names (T-24, T-25 `PdoDeadlockRetry*Runner`, T-12, T-26 internals) | Not in `v1.4.0`, so only consumers of unreleased `main` are affected; the two runner names are not carried | Use `PdoTransactionRunner` or `PdoSavepointTransactionRunner` with the retry argument; internals were never public |
+| New type (T-08 `InvalidTransactionConfigurationException`) | Did not exist in `v1.4.0`; a consumer only meets it when passing a retry limit outside `0..3` | None unless the retry argument is used |
 | `PageResult` → `PageResultDTO` | Type hints and `instanceof` | Rename; array and JSON output unchanged |
 | `PersistenceException` → `PhpPersistenceExceptionInterface` | `catch` clauses | Rename; whether consumers catch the old marker was not surveyed (unknown) |
 | Runner behavior | Fail-closed when `beginTransaction()` or `commit()` returns `false`; optional deadlock retry (default 0) | Read B-10 to B-12 |
