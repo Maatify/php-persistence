@@ -37,7 +37,8 @@ function secondsFromEnvironment(string $name, int $default): int
 }
 
 /**
- * Seconds granted to the teardown commands; also the core of the time reserved for cleanup.
+ * Seconds granted to the whole teardown (all its commands together); also the core of the time
+ * reserved for cleanup in the overall budget.
  */
 function teardownSeconds(): int
 {
@@ -262,16 +263,26 @@ function parseOptions(array $arguments): array
 }
 
 /**
+ * Stops the project's service and proves that nothing of it remains.
+ *
+ * The whole teardown (the `down` attempts and the three resource queries together) shares one
+ * deadline of teardownSeconds(), so the time reserved for it in the overall budget is a real
+ * upper bound: a slow or hung Docker cannot stretch it command by command. `down` is retried
+ * once when time allows; anything that could not be checked in time counts as not verified.
+ *
  * @param list<string> $compose docker compose prefix including the project and file
  * @param array<string, string> $environment
  */
 function teardown(array $compose, string $project, array $environment, string $root): bool
 {
+    $end = microtime(true) + teardownSeconds();
+    $left = static fn(): int => max(0, (int) floor($end - microtime(true)));
+
     $down = [...$compose, 'down', '--volumes', '--remove-orphans', '--timeout', '30'];
-    [$downStatus, , $downError] = execute($down, $environment, $root, teardownSeconds());
-    if ($downStatus !== 0) {
+    [$downStatus, , $downError] = execute($down, $environment, $root, max(1, $left()));
+    if ($downStatus !== 0 && $left() >= 5) {
         // One retry: a transient daemon error should not leave the project behind.
-        [$downStatus, , $downError] = execute($down, $environment, $root, teardownSeconds());
+        [$downStatus, , $downError] = execute($down, $environment, $root, $left());
     }
     $label = 'label=com.docker.compose.project=' . $project;
     $remaining = [];
@@ -279,7 +290,12 @@ function teardown(array $compose, string $project, array $environment, string $r
         $remaining[] = 'docker compose down failed with status ' . $downStatus . ': ' . trim($downError);
     }
     foreach ([['ps', '-aq'], ['volume', 'ls', '-q'], ['network', 'ls', '-q']] as $query) {
-        [$status, $out] = execute(['docker', ...$query, '--filter', $label], [], null, teardownSeconds());
+        if ($left() < 1) {
+            $remaining[] = implode(' ', $query) . ' not checked (teardown time exhausted)';
+
+            continue;
+        }
+        [$status, $out] = execute(['docker', ...$query, '--filter', $label], [], null, $left());
         if ($status !== 0 || trim($out) !== '') {
             $remaining[] = implode(' ', $query);
         }

@@ -353,4 +353,37 @@ final class IntegrationOrchestrationRobustnessTest extends TestCase
         self::assertSame(2, $status, $err);
         self::assertStringContainsString('must exceed the teardown reserve of 210 seconds', $err);
     }
+
+    public function testASlowFailingDockerCannotStretchTheTeardownBeyondItsSingleDeadline(): void
+    {
+        $support = dirname(__DIR__, 2) . '/scripts/integration-support.php';
+        $directory = sys_get_temp_dir() . '/ppstub' . bin2hex(random_bytes(4));
+        mkdir($directory);
+        $stub = $directory . '/docker';
+        $this->cleanup = [$stub, $directory];
+        file_put_contents($stub, <<<'SH'
+            #!/bin/sh
+            exec sleep 120
+            SH);
+        chmod($stub, 0755);
+        $child = 'require ' . var_export($support, true) . ';$start = microtime(true);'
+            . '$result = teardown(["docker", "compose"], "phppersist-it-test", [], "/tmp");'
+            . 'echo json_encode([$result, microtime(true) - $start]);';
+
+        [$status, $out, $err] = self::runWithDeadline(
+            [PHP_BINARY, '-r', $child],
+            ['PATH' => $directory . ':/usr/bin:/bin', 'PP_TEARDOWN_TIMEOUT_SECONDS' => '6'],
+        );
+
+        self::assertSame(0, $status, $err);
+        $decoded = json_decode($out, true);
+        self::assertIsArray($decoded);
+        self::assertFalse($decoded[0], 'nothing could be verified, so the teardown must fail');
+        // One deadline of 6 s plus at most one 5 s termination grace. Separate per-command deadlines would take 30 s.
+        self::assertGreaterThanOrEqual(5.0, $decoded[1]);
+        self::assertLessThan(14.0, $decoded[1], 'the teardown commands share one deadline');
+        self::assertStringContainsString('docker compose down failed with status 124', $err);
+        self::assertStringContainsString('ps -aq not checked (teardown time exhausted)', $err);
+        self::assertStringContainsString('network ls -q not checked (teardown time exhausted)', $err);
+    }
 }
