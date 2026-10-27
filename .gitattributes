@@ -1,0 +1,12 @@
+* text=auto eol=lf
+
+# Repository-only files that a Composer archive does not need.
+# Runtime source, composer.json, README.md, LICENSE and documentation stay in the archive.
+/.github/ export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/.php-cs-fixer.php export-ignore
+/phpstan.neon export-ignore
+/phpunit.xml export-ignore
+/scripts/ export-ignore
+/tests/ export-ignore

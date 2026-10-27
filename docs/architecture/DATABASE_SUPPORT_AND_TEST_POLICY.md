@@ -80,5 +80,5 @@ Required tests (future): positive and negative cases with the setting `ON` and `
 - MySQL newest endpoint and upper-bound policy; Innovation track.
 - MariaDB oldest and newest versions.
 - Whether a safe MariaDB contract exists for caller-owned transactions.
-- `ext-pdo_mysql` in `require`.
+- `ext-pdo_mysql` in `require` (decided later in [DEC-012](../decisions/DEC-012-mandatory-pdo-mysql-driver.md), WU-4).
 - Exact image tags or digests, project and environment variable names.
