@@ -24,6 +24,9 @@ require __DIR__ . '/integration-support.php';
 $root = dirname(__DIR__);
 $options = parseOptions(array_slice($argv, 1));
 $matrix = loadMatrix($root);
+// Reject an invalid timeout setting before anything is started.
+secondsFromEnvironment('PP_UP_TIMEOUT_SECONDS', 1);
+secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 1);
 $requested = $options['cell'] ?? (getenv('PP_DB_CELL') !== false && getenv('PP_DB_CELL') !== '' ? (string) getenv('PP_DB_CELL') : $matrix['default']);
 if (!array_key_exists($requested, $matrix['cells'])) {
     fail(EXIT_USAGE, 'Unknown cell "' . $requested . '". Allowed: ' . implode(', ', array_keys($matrix['cells'])));

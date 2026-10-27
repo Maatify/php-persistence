@@ -49,6 +49,8 @@ PP_DB_CELL=mariadb-11.8.9 composer test:integration
 composer test:integration -- --cell=mysql-8.0.16 --fresh-runs=2 --suite-passes=2
 ```
 
+Every external command has a deadline (120 s by default, 180 s for teardown, the two settings above for startup and the suite). A command that exceeds it is sent SIGTERM, killed after a 5 s grace period and reported with status 124; the lifecycle then ends as an infrastructure failure (exit `3`) after the same teardown, so a hung Docker command cannot block the run or skip cleanup.
+
 Options: `--cell=<key>` (or `PP_DB_CELL`), `--fresh-runs=<n>` independent lifecycles from a fresh service, `--suite-passes=<n>` suite executions per lifecycle. A cell that is not in the matrix is rejected; there is no free-form image, `latest` or floating tag. Exit status: `0` success, `1` test failure, `2` invalid usage or configuration, `3` infrastructure failure (missing prerequisite, unhealthy service, identity mismatch, teardown residue). Nothing is skipped silently: a missing prerequisite or a missing `PHP_PERSISTENCE_IT_*` variable fails.
 
 The PHP runner stays on the host PHP so the PHP matrix is truthful; only the database runs in Docker. Credentials are random per run, scoped to a disposable service and never reused. Baseline CI needs no repository secrets.
@@ -59,6 +61,7 @@ The PHP runner stays on the host PHP so the PHP matrix is truthful; only the dat
 |---|---|---|
 | `PP_DB_CELL` | developer / CI | Cell key; defaults to `default` in the matrix |
 | `PP_COMPOSE_PROJECT`, `PP_DB_IMAGE`, `PP_DB_ROOT_PASSWORD`, `PP_DB_DATABASE`, `PP_DB_USER`, `PP_DB_PASSWORD` | `scripts/integration.php` | Compose parameters of one lifecycle |
+| `PP_UP_TIMEOUT_SECONDS`, `PP_SUITE_TIMEOUT_SECONDS` | developer / CI (optional) | Whole seconds, 1 to 9999. Deadline for `docker compose up --wait` including image pull (default 660) and for one suite pass (default 900) |
 | `DOCKER_DEFAULT_PLATFORM` | `scripts/integration.php` | Set only for a cell that has a single platform (`mysql-8.0.16`: `linux/amd64`) |
 | `PHP_PERSISTENCE_IT_ENGINE`, `_EXPECTED_VERSION`, `_CELL`, `_HOST`, `_PORT`, `_DATABASE`, `_USER`, `_PASSWORD` | `scripts/integration.php` | Suite configuration; the suite fails when one is missing |
 

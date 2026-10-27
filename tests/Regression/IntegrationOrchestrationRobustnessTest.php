@@ -169,4 +169,86 @@ final class IntegrationOrchestrationRobustnessTest extends TestCase
         self::assertSame('false', $out);
         self::assertStringContainsString('Teardown left resources', $err);
     }
+
+    public function testExecuteStopsAHungCommandAtItsDeadline(): void
+    {
+        $support = dirname(__DIR__, 2) . '/scripts/integration-support.php';
+        $child = 'require ' . var_export($support, true) . ';$start = microtime(true);'
+            . '[$status, , $err] = execute([PHP_BINARY, "-r", "sleep(60);"], [], null, 2);'
+            . 'echo json_encode([$status, (int) round(microtime(true) - $start), str_contains($err, "timed out after 2 seconds")]);';
+
+        [$status, $out, $err] = self::runWithDeadline([PHP_BINARY, '-r', $child]);
+
+        self::assertSame(0, $status, $err);
+        self::assertSame('[124,2,true]', $out);
+    }
+
+    public function testExecuteKillsACommandThatIgnoresTheTerminationSignal(): void
+    {
+        $support = dirname(__DIR__, 2) . '/scripts/integration-support.php';
+        $child = 'require ' . var_export($support, true) . ';$start = microtime(true);'
+            . '[$status] = execute(["sh", "-c", "trap \"\" TERM; while :; do :; done"], [], null, 1);'
+            . '$elapsed = microtime(true) - $start;'
+            . 'echo json_encode([$status, $elapsed >= 5 && $elapsed < 20]);';
+
+        [$status, $out, $err] = self::runWithDeadline([PHP_BINARY, '-r', $child]);
+
+        self::assertSame(0, $status, $err);
+        self::assertSame('[124,true]', $out, 'SIGTERM is ignored, so the process must be killed after the grace period');
+    }
+
+    public function testPassthroughStopsAHungSuiteAtItsDeadline(): void
+    {
+        $support = dirname(__DIR__, 2) . '/scripts/integration-support.php';
+        $child = 'require ' . var_export($support, true) . ';'
+            . 'echo json_encode(passthrough([PHP_BINARY, "-r", "sleep(60);"], [], "/tmp", 2));';
+
+        [$status, $out, $err] = self::runWithDeadline([PHP_BINARY, '-r', $child]);
+
+        self::assertSame(0, $status, $err);
+        self::assertStringEndsWith('124', $out);
+        self::assertStringContainsString('timed out after 2 seconds', $err);
+    }
+
+    public function testHungDockerStartStillTearsDownAndFailsClosed(): void
+    {
+        $directory = sys_get_temp_dir() . '/ppstub' . bin2hex(random_bytes(4));
+        mkdir($directory);
+        $log = $directory . '/calls.log';
+        $stub = $directory . '/docker';
+        $this->cleanup = [$stub, $log, $directory];
+        file_put_contents($stub, <<<'SH'
+            #!/bin/sh
+            echo "$*" >> "$(dirname "$0")/calls.log"
+            case " $* " in
+              *" up "*) exec sleep 120 ;;
+            esac
+            exit 0
+            SH);
+        chmod($stub, 0755);
+
+        [$status, $out, $err] = self::runWithDeadline(
+            [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/integration.php', '--cell=mysql-8.4.13'],
+            ['PATH' => $directory . ':/usr/bin:/bin', 'PP_UP_TIMEOUT_SECONDS' => '2'],
+        );
+
+        self::assertNotSame(-1, $status, 'the orchestration hung on a docker command that never returns');
+        self::assertSame(3, $status, $out . $err);
+        self::assertStringContainsString('timed out after 2 seconds', $err);
+        self::assertStringContainsString('TEARDOWN VERIFIED', $out);
+        $calls = file_get_contents($log);
+        self::assertIsString($calls);
+        self::assertMatchesRegularExpression('/compose .* down --volumes --remove-orphans/', $calls, 'teardown ran after the timeout');
+    }
+
+    public function testAnInvalidTimeoutSettingIsAConfigurationError(): void
+    {
+        [$status, , $err] = self::runWithDeadline(
+            [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/integration.php', '--cell=mysql-8.4.13'],
+            ['PP_UP_TIMEOUT_SECONDS' => 'soon', 'PATH' => '/usr/bin:/bin'],
+        );
+
+        self::assertSame(2, $status, $err);
+        self::assertStringContainsString('PP_UP_TIMEOUT_SECONDS must be a whole number of seconds', $err);
+    }
 }

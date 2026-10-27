@@ -12,17 +12,59 @@ const EXIT_USAGE = 2;
 const EXIT_INFRASTRUCTURE = 3;
 const HEALTH_TIMEOUT_SECONDS = 240;
 const PROBE_TIMEOUT_SECONDS = 120;
+const COMMAND_TIMEOUT_SECONDS = 120;
+const TEARDOWN_TIMEOUT_SECONDS = 180;
+const TIMEOUT_EXIT_STATUS = 124;
+const TERMINATION_GRACE_SECONDS = 5;
+
+/**
+ * Positive integer seconds from an environment variable, or the default when it is not set.
+ * A set but invalid value is a configuration error.
+ */
+function secondsFromEnvironment(string $name, int $default): int
+{
+    $value = getenv($name);
+    if ($value === false || $value === '') {
+        return $default;
+    }
+    if (preg_match('/^[1-9][0-9]{0,3}$/', $value) !== 1) {
+        fail(EXIT_USAGE, $name . ' must be a whole number of seconds between 1 and 9999');
+    }
+
+    return (int) $value;
+}
+
+/**
+ * Stops a process that exceeded its deadline: SIGTERM, a short grace period, then SIGKILL.
+ *
+ * @param resource $process
+ */
+function terminateProcess($process): void
+{
+    proc_terminate($process);
+    $until = microtime(true) + TERMINATION_GRACE_SECONDS;
+    while (microtime(true) < $until) {
+        if (proc_get_status($process)['running'] === false) {
+            return;
+        }
+        usleep(100_000);
+    }
+    proc_terminate($process, 9);
+}
 
 /**
  * Runs a command without a shell and returns its exit status, standard output and standard error.
  * Both pipes are drained concurrently, so a process that writes a lot to either stream cannot
  * block on a full pipe while this function waits on the other one.
  *
+ * The command is stopped when it exceeds $timeoutSeconds; the status is then TIMEOUT_EXIT_STATUS
+ * and the standard error ends with a timeout notice.
+ *
  * @param list<string> $command
  * @param array<string, string> $environment
  * @return array{int, string, string} exit status, standard output, standard error
  */
-function execute(array $command, array $environment = [], ?string $cwd = null): array
+function execute(array $command, array $environment = [], ?string $cwd = null, int $timeoutSeconds = COMMAND_TIMEOUT_SECONDS): array
 {
     $process = proc_open(
         $command,
@@ -40,7 +82,17 @@ function execute(array $command, array $environment = [], ?string $cwd = null): 
     foreach ($open as $stream) {
         stream_set_blocking($stream, false);
     }
+    $deadline = microtime(true) + $timeoutSeconds;
     while ($open !== []) {
+        if (microtime(true) >= $deadline) {
+            terminateProcess($process);
+            foreach ($open as $stream) {
+                fclose($stream);
+            }
+            proc_close($process);
+
+            return [TIMEOUT_EXIT_STATUS, $buffers[1], $buffers[2] . "\n" . $command[0] . ' timed out after ' . $timeoutSeconds . " seconds\n"];
+        }
         $read = array_values($open);
         $write = null;
         $except = null;
@@ -63,14 +115,35 @@ function execute(array $command, array $environment = [], ?string $cwd = null): 
 }
 
 /**
+ * Runs a command attached to this process's streams and returns its exit status, or
+ * TIMEOUT_EXIT_STATUS when it exceeded $timeoutSeconds and was stopped.
+ *
  * @param list<string> $command
  * @param array<string, string> $environment
  */
-function passthrough(array $command, array $environment, string $cwd): int
+function passthrough(array $command, array $environment, string $cwd, int $timeoutSeconds): int
 {
     $process = proc_open($command, [0 => STDIN, 1 => STDOUT, 2 => STDERR], $pipes, $cwd, [...getenv(), ...$environment]);
+    if (!is_resource($process)) {
+        return 127;
+    }
+    $deadline = microtime(true) + $timeoutSeconds;
+    while (true) {
+        $status = proc_get_status($process);
+        if (!$status['running']) {
+            $code = proc_close($process);
 
-    return is_resource($process) ? proc_close($process) : 127;
+            return $code === -1 ? $status['exitcode'] : $code;
+        }
+        if (microtime(true) >= $deadline) {
+            terminateProcess($process);
+            proc_close($process);
+            fwrite(STDERR, $command[0] . ' timed out after ' . $timeoutSeconds . " seconds\n");
+
+            return TIMEOUT_EXIT_STATUS;
+        }
+        usleep(100_000);
+    }
 }
 
 function fail(int $code, string $message): never
@@ -133,7 +206,7 @@ function parseOptions(array $arguments): array
  */
 function teardown(array $compose, string $project, array $environment, string $root): bool
 {
-    execute([...$compose, 'down', '--volumes', '--remove-orphans', '--timeout', '30'], $environment, $root);
+    execute([...$compose, 'down', '--volumes', '--remove-orphans', '--timeout', '30'], $environment, $root, TEARDOWN_TIMEOUT_SECONDS);
     $label = 'label=com.docker.compose.project=' . $project;
     $remaining = [];
     foreach ([['ps', '-aq'], ['volume', 'ls', '-q'], ['network', 'ls', '-q']] as $query) {
@@ -193,7 +266,7 @@ function connect(array $suiteEnvironment, string $user, string $password): PDO
  */
 function runOnService(string $root, string $cellKey, array $cell, array $options, array $environment, array $compose): int
 {
-    [$upStatus, , $upError] = execute([...$compose, 'up', '--detach', '--wait', '--wait-timeout', (string) HEALTH_TIMEOUT_SECONDS], $environment, $root);
+    [$upStatus, , $upError] = execute([...$compose, 'up', '--detach', '--wait', '--wait-timeout', (string) HEALTH_TIMEOUT_SECONDS], $environment, $root, secondsFromEnvironment('PP_UP_TIMEOUT_SECONDS', HEALTH_TIMEOUT_SECONDS + 420));
     if ($upStatus !== 0) {
         fwrite(STDERR, "Service did not become healthy:\n" . $upError . "\n");
         [, $logs] = execute([...$compose, 'logs', '--tail', '40'], $environment, $root);
@@ -260,7 +333,7 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
     $phpunit = [PHP_BINARY, $root . '/vendor/bin/phpunit', '--testsuite', 'integration', '--no-progress'];
     for ($pass = 1; $pass <= $options['suitePasses']; $pass++) {
         echo '--- suite pass ' . $pass . '/' . $options['suitePasses'] . "\n";
-        if (passthrough($phpunit, $suiteEnvironment, $root) !== 0) {
+        if (passthrough($phpunit, $suiteEnvironment, $root, secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)) !== 0) {
             return EXIT_TEST_FAILURE;
         }
         try {
