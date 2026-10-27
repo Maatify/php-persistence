@@ -38,5 +38,5 @@ A distinct root allows both packages in one Composer root without a PSR-4 prefix
 
 - Every public type has a new fully-qualified name. Nothing keeps the legacy FQCN, and no import compatibility is promised ([DEC-005](./DEC-005-coexistence-with-legacy-package.md)).
 - The `{PackageName}` derivation (`php-persistence` → `PhpPersistence`) is an interpretation of an undefined term in the pinned standards, recorded here. Clarifying it centrally is outside this repository's authority.
-- The exact placement of each type under the new root is governed by [DEC-010](./DEC-010-package-topology-multi-capability.md) and, for responsibility folders, the proposed [DEC-011](./DEC-011-responsibility-placement-and-savepoint-helper.md).
+- The exact placement of each type under the new root is governed by [DEC-010](./DEC-010-package-topology-multi-capability.md) and, for responsibility folders, [DEC-011](./DEC-011-responsibility-placement-and-savepoint-helper.md).
 - No Composer manifest exists yet. The values above take effect when WU-4 adds it.

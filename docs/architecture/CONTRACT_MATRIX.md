@@ -31,7 +31,7 @@ Paths in columns A and B are relative to `src/` of the legacy repository. Both A
 
 Counts over the 21 types of A: RELOCATE 16, RENAME 2, REDESIGN 2, OMIT 1. No type keeps its fully-qualified name, and only the RELOCATE class is a pure namespace change; section 5 lists what each class means for a consumer. Namespace root of C is `Maatify\PhpPersistence\` (written `P\` below), per [DEC-004](../decisions/DEC-004-package-identity-namespace-and-exception-marker.md).
 
-Column C paths are proposals until [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md) is decided. Folders `Config/`, `Criteria/`, `DTO/`, `Enum/`, `ValueObject/` apply the responsibility vocabulary of the pinned Package Building Standard and are reviewed with this document.
+Column C paths follow [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md) (`ACTIVE`). Folders `Config/`, `Criteria/`, `DTO/`, `Enum/`, `ValueObject/` apply the responsibility vocabulary of the pinned Package Building Standard and are reviewed with this document.
 
 ## 3. Type matrix
 
@@ -55,7 +55,7 @@ Column C paths are proposals until [DEC-011](../decisions/DEC-011-responsibility
 |---|---|---|---|---|---|
 | T-10 | `Pdo/Ordering/ScopedOrderingConfig` | same | `P\Ordering\Config\ScopedOrderingConfig` | RELOCATE | Validates and quotes identifiers. |
 | T-11 | `Pdo/Ordering/ScopedOrderingManager` | same; adds `getNextPositionForUpdate`; changed `moveWithinScope`; uses deprecated runner | `P\Ordering\Repository\ScopedOrderingManager` | RELOCATE, with internal rewiring to the Gen2 runner | Behavior deltas B-02 to B-05 in [BEHAVIOR_CONTRACT.md](./BEHAVIOR_CONTRACT.md). |
-| T-12 | — | `Pdo/Ordering/Internal/OperationSavepoint` (`@internal`) | merged into the `@internal` savepoint helper owned by Transaction | REDESIGN | Proposal in [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md). |
+| T-12 | — | `Pdo/Ordering/Internal/OperationSavepoint` (`@internal`) | merged into the `@internal` savepoint helper owned by Transaction | REDESIGN | Decided in [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md). |
 
 ### 3.3 Pagination
 
@@ -83,7 +83,7 @@ Column C paths are proposals until [DEC-011](../decisions/DEC-011-responsibility
 
 ## 4. Totals
 
-| | A | B | C (proposed) |
+| | A | B | C (planned) |
 |---|---|---|---|
 | Public types | 21 | 24 | 21 public + 2 `@internal` |
 | `@internal` types | 0 | 2 | 2 (executor, savepoint helper) |

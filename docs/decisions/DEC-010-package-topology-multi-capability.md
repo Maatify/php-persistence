@@ -4,7 +4,7 @@
 - **Title:** Package topology: one package, three capabilities
 - **Status:** `ACTIVE`
 - **Date:** `2026-10-27`
-- **Decision Authority:** `Technical Lead` within the WU-3 scope authorized by the Project Owner ("ماشي يلا", 2026-10-27) — the single-package, three-capability scope is stated in [Issue #6](https://github.com/Maatify/php-persistence/issues/6) (Allowed content, item 2) and follows alternative B of the study accepted in [Issue #1](https://github.com/Maatify/php-persistence/issues/1#issuecomment-6371517815). The Lead confirms or rejects this status at the independent review of the WU-3 pull request.
+- **Decision Authority:** `Technical Lead` within the WU-3 scope authorized by the Project Owner ("ماشي يلا", 2026-10-27) — the single-package, three-capability scope is stated in [Issue #6](https://github.com/Maatify/php-persistence/issues/6) (Allowed content, item 2) and follows alternative B of the study accepted in [Issue #1](https://github.com/Maatify/php-persistence/issues/1#issuecomment-6371517815). The Lead confirmed `ACTIVE` in the [WU-3 Fresh Full Independent Review](https://github.com/Maatify/php-persistence/pull/7#pullrequestreview-5666993605) (one library with three capabilities, within the Owner's scope).
 - **Scope / Concern:** How many Composer packages exist, which capabilities they contain, and which top-level source folders are forbidden.
 - **Supersedes:** `—`
 - **Superseded By:** `—`
@@ -28,5 +28,5 @@ A single package keeps one release, one CI and one Package Reference. Three pack
 
 ## Consequences
 
-- The exact responsibility folders inside each capability are not closed here; they are proposed in [DEC-011](./DEC-011-responsibility-placement-and-savepoint-helper.md).
+- The exact responsibility folders inside each capability are not closed here; they are decided in [DEC-011](./DEC-011-responsibility-placement-and-savepoint-helper.md).
 - The Package Reference (WU-9) must declare the topology literally as required by the pinned standard.

@@ -40,7 +40,7 @@ Not in scope: owning tables or migrations, opening connections, changing PDO att
 
 ## 4. Source topology
 
-Decided in [DEC-010](../decisions/DEC-010-package-topology-multi-capability.md); responsibility folders are proposed in [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md) and are marked `(proposed)`.
+Decided in [DEC-010](../decisions/DEC-010-package-topology-multi-capability.md); responsibility folders are decided in [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md).
 
 ```text
 Source Topology: Multi Capability
@@ -55,28 +55,28 @@ Capabilities:
 src/
 ├── Exception/PhpPersistenceExceptionInterface.php
 ├── Ordering/
-│   ├── Config/ScopedOrderingConfig.php                          (proposed)
+│   ├── Config/ScopedOrderingConfig.php
 │   ├── Exception/{InvalidOrderingConfigurationException,
 │   │              InvalidOrderingOperationException}.php
-│   └── Repository/ScopedOrderingManager.php                     (proposed)
+│   └── Repository/ScopedOrderingManager.php
 ├── Pagination/
-│   ├── Config/PaginationConfig.php                              (proposed)
-│   ├── Criteria/{PageRequest,PdoPaginationQueryDescriptor}.php  (proposed)
-│   ├── DTO/PageResultDTO.php                                    (proposed)
-│   ├── Enum/SortDirectionEnum.php                               (proposed)
+│   ├── Config/PaginationConfig.php
+│   ├── Criteria/{PageRequest,PdoPaginationQueryDescriptor}.php
+│   ├── DTO/PageResultDTO.php
+│   ├── Enum/SortDirectionEnum.php
 │   ├── Exception/{InvalidPaginationConfigurationException,
 │   │              InvalidPaginationQueryException,
 │   │              PaginationExecutionException}.php
-│   ├── Repository/PdoPaginator.php                              (proposed)
-│   └── ValueObject/SortWhitelist.php                            (proposed)
+│   ├── Repository/PdoPaginator.php
+│   └── ValueObject/SortWhitelist.php
 └── Transaction/
     ├── Exception/{InvalidTransactionConfigurationException,
     │              TransactionExecutionException}.php
     └── Repository/{TransactionRunnerInterface,
                     SavepointTransactionRunnerInterface,
                     PdoTransactionRunner,
-                    PdoSavepointTransactionRunner}.php           (proposed)
-                    + @internal executor and savepoint helper    (proposed)
+                    PdoSavepointTransactionRunner}.php
+                    + @internal executor and savepoint helper
 ```
 
 Rules from [DEC-010](../decisions/DEC-010-package-topology-multi-capability.md):
@@ -101,7 +101,7 @@ Exceptions: the package defines named exceptions for configuration, execution-co
 ## 6. Naming and API disposition
 
 - Decided: root namespace, marker, `PageResultDTO`, reuse of `PdoTransactionRunner` and `PdoSavepointTransactionRunner` with Gen2 behavior, omission of `OrderingTransactionException` ([DEC-004](../decisions/DEC-004-package-identity-namespace-and-exception-marker.md), [DEC-007](../decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md)).
-- Proposed: all other names stay as in the legacy package ([DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)).
+- Decided: all other names stay as in the legacy package ([DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md)).
 - The full mapping is [CONTRACT_MATRIX.md](./CONTRACT_MATRIX.md).
 
 ## 7. Successor intent and the standards boundary
@@ -122,7 +122,7 @@ Legacy documents (studies, ADRs, harness scripts) are referenced by permanent li
 |---|---|
 | WU-4 Composer and quality tooling | `php ^8.4`; PSR-4 per DEC-004; no `replace`/`provide`/`conflict`; no `version`, no `composer.lock`; `ext-pdo` and the `ext-pdo_mysql` decision; the package marker interface; PHPStan at max level without baseline; code style per the pinned PHP Coding Style Standard. |
 | WU-5 CI and Integration infrastructure | Matrix and environment rules of [DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md); first settle the open items in DEC-009 that the cells depend on; one parameterized Compose; pinned images; lowest/latest dependency jobs; a single required gate job. |
-| WU-6 Transaction | Settle [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md); characterization of the savepoint logic before merging helpers; named tests for B-10 to B-13; Integration on PHP 8.4 and latest with real deadlocks; provenance gate. |
+| WU-6 Transaction | Apply [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md); characterization tests of the savepoint logic pass before the helpers are merged and before the API freeze; named tests for B-10 to B-13; Integration on PHP 8.4 and latest with real deadlocks; provenance gate. |
 | WU-7 Pagination | B-08, B-09 golden fixtures from legacy; provenance gate. |
 | WU-8 Ordering | Depends on WU-6; B-01 to B-07; stale-snapshot, lazy-savepoint, rollback, soft-delete and nullable-scope cases; MariaDB cases per DEC-009. |
 | WU-9 Documentation | Package Reference with the literal topology declaration, API lists, exceptions, database support limited to what is verified, classifications; README without unverified claims; remaining documents required by the pinned Library Presentation Standard. |
@@ -135,7 +135,6 @@ Each work unit also re-verifies the legacy source commit ([DEC-007](../decisions
 
 | Item | Record | Blocks |
 |---|---|---|
-| Responsibility placement, savepoint helper ownership, retained names | [DEC-011](../decisions/DEC-011-responsibility-placement-and-savepoint-helper.md) `PROPOSED` | WU-6 and the public API freeze |
 | MySQL newest endpoint, upper-bound policy, Innovation track | [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) `PROPOSED` | WU-5 matrix; any published MySQL range |
 | MariaDB oldest and newest versions | DEC-009 | WU-5 MariaDB cells; any MariaDB claim |
 | Safe MariaDB contract for `1020` in caller-owned transactions | DEC-009 | WU-8 acceptance for MariaDB; any MariaDB claim |
