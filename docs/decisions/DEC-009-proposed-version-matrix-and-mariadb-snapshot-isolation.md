@@ -46,4 +46,7 @@ Exact image tags or digests are fixed when the Compose definition is written (WU
 ## Consequences
 
 - Nothing in this record may be cited as a supported range. The README and Package Reference must not repeat these versions as support claims.
-- When the Owner ratifies or amends any row, a new `ACTIVE` record supersedes this one in the same change as the index update.
+- `SUPERSEDED` applies only to a record that was `ACTIVE` ([Decision Governance Standard](../php-engineering-standards/standards/governance/DECISION_GOVERNANCE_STANDARD_AR.md) status model), so it is never the outcome for this `PROPOSED` record.
+- When the Owner ratifies every row, as written or amended, this record is edited to the ratified content and its status becomes `ACTIVE` (`PROPOSED` → `ACTIVE`), with the index updated in the same change.
+- When the Owner ratifies only some rows, the ratified rows move to a new `ACTIVE` record with a new ID, and the rows still open stay here as `PROPOSED` (or `DEFERRED`, if postponed) with the moved rows removed. Neither record uses `Supersedes` or `Superseded By`.
+- A row the Owner declines is recorded as `REJECTED` (a separate record or a clearly marked part of the record that no longer carries the row), not as superseded.
