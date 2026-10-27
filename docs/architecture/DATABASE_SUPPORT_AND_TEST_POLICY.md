@@ -9,9 +9,11 @@ Ratified policy: [DEC-008](../decisions/DEC-008-database-engine-targets-and-veri
 | State | Meaning | May appear in README, Package Reference, Composer metadata |
 |---|---|---|
 | Design target | The design aims at it; nothing is proven. | Yes, worded as a target. |
-| Verified | Real Integration tests pass at both ends of the declared range for that engine, on the PHP matrix. | Only after this state. |
-| Unverified | Anything else, including a version between two verified endpoints that is not itself tested. | No. |
+| Range verified | Real Integration tests pass at both ends (oldest and newest declared version) of the declared range for that engine, on the PHP matrix, as required by [DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md). | Yes, as the declared range of that engine, worded as "supported range verified at its endpoints" and never as "every version in the range was tested". |
+| Version tested | A specific version has its own passing real Integration cells. | Yes, by name, for exactly the versions tested. |
+| Unverified | A version outside the declared range, an engine whose endpoints are not both verified, or a behavior difference that is known or suspected but not covered by a test. | No. |
 
+Range support and per-version testing are different claims. The endpoint rule is what supports a range; a version between two verified endpoints is covered by the range claim and is not called individually tested unless it has its own cells. Intermediate cells are added by risk (section 4), not as a precondition for the range.
 Current state (2026-10-27): MySQL and MariaDB are design targets. Nothing is verified.
 
 ## 2. Engines and versions
@@ -38,7 +40,7 @@ For each declared engine, with PHP oldest = `P_min` and PHP latest = `P_max`:
 | `P_min` | required | required |
 | `P_max` | required | required |
 
-Add a cell for each intermediate version when a behavior difference between versions is known or suspected. Add the cells for the MariaDB setting `innodb_snapshot_isolation` (both states) wherever MariaDB versions that support it are used.
+Intermediate versions are not required for the range claim. Add a cell for an intermediate version when a behavior difference between versions is known or suspected, when a long-term-support line is declared as a named target, or when a defect is reported on it; the cell then moves that version to "version tested". If a known difference is found in an untested intermediate version, the range claim is narrowed or the cell is added before the claim is published. Add the cells for the MariaDB setting `innodb_snapshot_isolation` (both states) wherever MariaDB versions that support it are used.
 
 ## 5. Mandatory properties of the test environment
 
