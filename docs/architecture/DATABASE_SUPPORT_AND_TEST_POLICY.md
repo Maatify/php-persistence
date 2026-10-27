@@ -1,0 +1,84 @@
+# Database Support, Compatibility and Test Policy
+
+Status: policy and requirements for WU-5 and later. Nothing here is a support claim. No test was run for this document and this repository has no CI.
+
+Ratified policy: [DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md). Unratified version choices and the MariaDB `1020` contract: [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) (`PROPOSED`).
+
+## 1. Support states
+
+| State | Meaning | May appear in README, Package Reference, Composer metadata |
+|---|---|---|
+| Design target | The design aims at it; nothing is proven. | Yes, worded as a target. |
+| Range verified | Real Integration tests pass at both ends (oldest and newest declared version) of the declared range for that engine, on the PHP matrix, as required by [DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md). | Yes, as the declared range of that engine, worded as "supported range verified at its endpoints" and never as "every version in the range was tested". |
+| Version tested | A specific version has its own passing real Integration cells. | Yes, by name, for exactly the versions tested. |
+| Unverified | A version outside the declared range, an engine whose endpoints are not both verified, or a behavior difference that is known or suspected but not covered by a test. | No. |
+
+Range support and per-version testing are different claims. The endpoint rule is what supports a range; a version between two verified endpoints is covered by the range claim and is not called individually tested unless it has its own cells. Intermediate cells are added by risk (section 4), not as a precondition for the range.
+Current state (2026-10-27): MySQL and MariaDB are design targets. Nothing is verified.
+
+## 2. Engines and versions
+
+| Engine | Ratified | Proposed or open |
+|---|---|---|
+| MySQL | Minimum `8.0.16` | Newest endpoint (`9.7.4` LTS proposed), intermediate `8.4.13` LTS, upper-bound policy, Innovation track (`26.10.0`) |
+| MariaDB | Target engine (independent from MySQL) | Oldest (`10.11` LTS proposed), intermediates (`11.4.13`, `11.8.9`), newest (`12.3` LTS proposed) |
+
+Version numbers come from the vendors' announcements cited in DEC-009 and are re-checked when WU-5 fixes image tags or digests.
+
+## 3. PHP and dependency axes
+
+- PHP minimum is `8.4` and the CI exercises the oldest and the latest supported minor, as required by the pinned [CI Workflow Standard](../php-engineering-standards/standards/packages/CI_WORKFLOW_STANDARD.md).
+- Dependencies run in two modes: latest compatible and lowest compatible.
+- The unit/regression suites run without a database. Integration and the consumer harness run against the real database matrix.
+
+## 4. Required matrix shape (for WU-5)
+
+For each declared engine, with PHP oldest = `P_min` and PHP latest = `P_max`:
+
+| | Engine oldest | Engine newest |
+|---|---|---|
+| `P_min` | required | required |
+| `P_max` | required | required |
+
+Intermediate versions are not required for the range claim. Add a cell for an intermediate version when a behavior difference between versions is known or suspected, when a long-term-support line is declared as a named target, or when a defect is reported on it; the cell then moves that version to "version tested". If a known difference is found in an untested intermediate version, the range claim is narrowed or the cell is added before the claim is published. Add the cells for the MariaDB setting `innodb_snapshot_isolation` (both states) wherever MariaDB versions that support it are used.
+
+## 5. Mandatory properties of the test environment
+
+1. One parameterized Docker Compose definition that takes the engine and version as parameters.
+2. Pinned image versions or digests. Never `latest`.
+3. Real database services only. No SQLite, no mocked storage for storage behavior.
+4. Health check before tests, not a fixed sleep.
+5. Fresh schema per run and isolated lifecycle; teardown on success and on failure.
+6. Dynamic loopback port, no fixed container name, run-unique project identity.
+7. The suite runs twice from a clean state to prove repeatability and absence of residue.
+8. No silent skips. A skipped test fails the gate unless the skip is declared and justified in the same change.
+9. Failure-path tests are mandatory, not optional.
+
+## 6. Behaviors that need engine-specific tests
+
+| Area | Why engine-specific |
+|---|---|
+| Caller-owned transactions | Ownership boundaries and what the engine does to the transaction after an error differ. |
+| Savepoint and rollback behavior | Statement support and error behavior may differ by engine and version. |
+| Transaction state after engine failure | `PDO::inTransaction()` follows the last server reply; after an error the server may already have rolled back (see section 7). |
+| Deadlock retry | Depends on SQLSTATE `40001`, driver code `1213`, and the `DO 0` probe; must be proven per engine. |
+| Locking reads under stale snapshots | Behavior differs on MariaDB depending on `innodb_snapshot_isolation`. |
+| Identifier quoting and `FOR UPDATE` | Dialect assumptions. |
+
+## 7. MariaDB hazard to cover
+
+Source: [legacy Issue #47 study, REPORT.md at `1f6a7aa`](https://github.com/Maatify/persistence/blob/1f6a7aafe601090b7e55f60d83794364afdefe67/docs/studies/issue-47-mariadb-snapshot/REPORT.md). Findings are the legacy repository's measurements, not this package's.
+
+- With `innodb_snapshot_isolation=ON` (the default on MariaDB 11.8.9 in that study), a locking read or an update after an older `REPEATABLE READ` snapshot can fail with error `1020` when it touches a row changed after the snapshot.
+- The server can roll back the caller's whole transaction while `PDO::inTransaction()` still reports it as active. What follows depends on the version, so a caller that swallows the error loses atomicity.
+- The package cannot restore the guarantee from inside without changing the host configuration or silently overriding it.
+
+Required tests (future): positive and negative cases with the setting `ON` and `OFF` at every MariaDB endpoint; check what the next statement does after `1020`; assert the error propagates unchanged; assert the package issues no `SET` of the setting or the isolation level. Forbidden responses: changing connection or server settings, swallowing the error, retrying the caller's work.
+
+## 8. What WU-3 does not decide
+
+- MySQL newest endpoint and upper-bound policy; Innovation track.
+- MariaDB oldest and newest versions.
+- Whether a safe MariaDB contract exists for caller-owned transactions.
+- `ext-pdo_mysql` in `require`.
+- Exact image tags or digests, project and environment variable names.
