@@ -27,7 +27,7 @@ Unit and Regression need no Docker. `composer test` includes Integration through
 
 ## 2. Integration lifecycle
 
-`composer test:integration` runs `scripts/integration.php`:
+`composer test:integration` runs `scripts/integration.php` (functions in `scripts/integration-support.php`, which the regression suite exercises without Docker):
 
 ```text
 validate prerequisites (docker, compose, daemon, ext-pdo_mysql, vendor)
