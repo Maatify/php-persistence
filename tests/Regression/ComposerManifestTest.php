@@ -108,6 +108,21 @@ final class ComposerManifestTest extends TestCase
         self::assertStringContainsString('/vendor/', $ignore);
     }
 
+    public function testDependencyPolicyIsFailClosed(): void
+    {
+        $config = self::manifest()['config'];
+        self::assertIsArray($config);
+
+        $expected = [
+            'advisories' => ['block' => true, 'audit' => 'fail'],
+            'malware' => ['block' => true, 'block-scope' => 'all', 'audit' => 'fail'],
+            'abandoned' => ['audit' => 'fail'],
+        ];
+
+        self::assertSame($expected, $config['policy']);
+        self::assertArrayNotHasKey('audit', $config, 'the legacy audit configuration must not be mixed with policy');
+    }
+
     public function testPackageMapsAreAlphabeticallySorted(): void
     {
         $manifest = self::manifest();

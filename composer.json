@@ -60,6 +60,20 @@
     "sort-packages": true,
     "platform": {
       "php": "8.4.0"
+    },
+    "policy": {
+      "advisories": {
+        "block": true,
+        "audit": "fail"
+      },
+      "malware": {
+        "block": true,
+        "block-scope": "all",
+        "audit": "fail"
+      },
+      "abandoned": {
+        "audit": "fail"
+      }
     }
   },
   "minimum-stability": "stable",

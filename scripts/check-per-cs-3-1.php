@@ -3,120 +3,573 @@
 declare(strict_types=1);
 
 /**
- * Verifies the PHP-FIG PER Coding Style 3.1 rules that PHP CS Fixer 3.x cannot check.
+ * Verifies the PHP-FIG PER Coding Style 3.1 rules that PHP CS Fixer cannot check.
  *
- * The formatter implements PER Coding Style up to 3.0. This script covers the
- * mechanically detectable 3.1 changes on the repository-owned PHP files:
+ * PHP CS Fixer implements PER Coding Style up to 3.0. The eight changes of 3.1
+ * (https://www.php-fig.org/per/coding-style/meta/migration-3.1/) are verified here
+ * on the token stream of every repository-owned PHP file:
  *
- *  - clone must be written with parentheses;
- *  - switch statements are not used (the 3.1 case rules have no verifier here);
- *  - a closure with an empty body must be written as "{}" on one line;
- *  - the opening bracket of a multi-line array must not stand alone on its line;
- *  - the pipe operator and attributes on anonymous classes are not used.
+ *  1. clone is written with parentheses;
+ *  2. switch: a case body is not wrapped in braces, every non-empty case ends with a
+ *     terminating statement (also the last one), and a multi-line case condition is
+ *     wrapped in parentheses whose closing parenthesis and colon stand alone on the
+ *     last line;
+ *  3. the pipe operator has a space on both sides;
+ *  4. a split pipe chain starts each line with the operator and indents continuation lines;
+ *  5. a closure with an empty body is written as " {}" on one line;
+ *  6. attributes on an anonymous class start on the line after "new", are indented once,
+ *     and the class declaration starts on its own line with the same indentation;
+ *  7. enum members use private instead of protected;
+ *  8. the opening bracket of a multi-line array does not stand alone on its line.
  *
  * Usage: php scripts/check-per-cs-3-1.php [path ...]
- * Without arguments it scans src, tests and scripts. Exit status 1 on any finding.
+ * Without arguments it scans every PHP file of the repository except vendor, docs and
+ * tool caches. Exit status 1 when any finding exists or no file was found.
  */
+
+const TERMINATORS = [T_BREAK, T_CONTINUE, T_RETURN, T_THROW, T_GOTO, T_EXIT];
+const EXPRESSION_PREVIOUS = [T_VARIABLE, ')', ']', T_STRING, T_CONSTANT_ENCAPSED_STRING, T_STATIC, T_NS_SEPARATOR];
+
+/**
+ * @param string $source
+ * @return list<array{id: int|string, text: string, line: int}> all tokens including whitespace and comments
+ */
+function tokenize(string $source): array
+{
+    $tokens = [];
+    $line = 1;
+    foreach (token_get_all($source) as $token) {
+        if (is_array($token)) {
+            $tokens[] = ['id' => $token[0], 'text' => $token[1], 'line' => $token[2]];
+            $line = $token[2] + substr_count($token[1], "\n");
+
+            continue;
+        }
+        $tokens[] = ['id' => $token, 'text' => $token, 'line' => $line];
+        $line += substr_count($token, "\n");
+    }
+
+    return $tokens;
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $tokens
+ * @return list<array{id: int|string, text: string, line: int}> significant tokens only
+ */
+function significant(array $tokens): array
+{
+    return array_values(array_filter(
+        $tokens,
+        static fn(array $token): bool => !in_array($token['id'], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true),
+    ));
+}
+
+/**
+ * Index of the token that closes the group opened at $open.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ */
+function matching(array $sig, int $open): ?int
+{
+    $depth = 0;
+    $count = count($sig);
+    for ($i = $open; $i < $count; $i++) {
+        $id = $sig[$i]['id'];
+        if (in_array($id, ['(', '[', '{', T_ATTRIBUTE, T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)) {
+            $depth++;
+        } elseif (in_array($id, [')', ']', '}'], true)) {
+            $depth--;
+            if ($depth === 0) {
+                return $i;
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * Index of the matching opening token for the closing token at $close.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ */
+function matchingOpen(array $sig, int $close): ?int
+{
+    $depth = 0;
+    for ($i = $close; $i >= 0; $i--) {
+        $id = $sig[$i]['id'];
+        if (in_array($id, [')', ']', '}'], true)) {
+            $depth++;
+        } elseif (in_array($id, ['(', '[', '{', T_ATTRIBUTE, T_CURLY_OPEN, T_DOLLAR_OPEN_CURLY_BRACES], true)) {
+            $depth--;
+            if ($depth === 0) {
+                return $i;
+            }
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ */
+function firstOnLine(array $sig, int $index): bool
+{
+    if ($index === 0 || !isset($sig[$index - 1], $sig[$index])) {
+        return $index === 0;
+    }
+
+    return endsLine($sig[$index - 1], $sig[$index]);
+}
+
+/**
+ * True when the previous token ends on an earlier line than the current token starts.
+ *
+ * @param array{id: int|string, text: string, line: int} $previous
+ * @param array{id: int|string, text: string, line: int} $current
+ */
+function endsLine(array $previous, array $current): bool
+{
+    return $previous['line'] + substr_count($previous['text'], "\n") < $current['line'];
+}
+
+/**
+ * Leading whitespace width of a source line (1-based).
+ *
+ * @param list<string> $lines
+ */
+function indentOf(array $lines, int $line): int
+{
+    $text = $lines[$line - 1] ?? '';
+
+    return strlen($text) - strlen(ltrim($text, " \t"));
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @return list<string>
+ */
+function checkClone(string $file, array $sig): array
+{
+    $findings = [];
+    foreach ($sig as $i => $token) {
+        if ($token['id'] === T_CLONE && ($sig[$i + 1]['text'] ?? '') !== '(') {
+            $findings[] = $file . ':' . $token['line'] . ': clone must be written with parentheses';
+        }
+    }
+
+    return $findings;
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @return list<string>
+ */
+function checkSwitch(string $file, array $sig): array
+{
+    $findings = [];
+    foreach ($sig as $i => $token) {
+        if ($token['id'] !== T_SWITCH) {
+            continue;
+        }
+        $condition = ($sig[$i + 1]['id'] ?? null) === '(' ? matching($sig, $i + 1) : null;
+        $open = $condition === null ? null : $condition + 1;
+        if ($open === null || ($sig[$open]['id'] ?? null) !== '{') {
+            $findings[] = $file . ':' . $token['line'] . ': switch must use braces (alternative syntax is not allowed)';
+
+            continue;
+        }
+        $close = matching($sig, $open);
+        if ($close === null) {
+            continue;
+        }
+
+        /** @var list<array{start: int, colon: int}> $labels */
+        $labels = [];
+        for ($j = $open + 1; $j < $close; $j++) {
+            $id = $sig[$j]['id'];
+            if ($id === T_CASE || $id === T_DEFAULT) {
+                $colon = labelColon($sig, $j, $close);
+                if ($colon === null) {
+                    $findings[] = $file . ':' . $sig[$j]['line'] . ': case label must end with a colon';
+
+                    continue;
+                }
+                $labels[] = ['start' => $j, 'colon' => $colon];
+                $j = $colon;
+
+                continue;
+            }
+            if (in_array($id, ['(', '[', '{', T_ATTRIBUTE], true)) {
+                $end = matching($sig, $j);
+                $j = $end ?? $j;
+            }
+        }
+
+        foreach ($labels as $position => $label) {
+            $limit = isset($labels[$position + 1]) ? $labels[$position + 1]['start'] : $close;
+            array_push($findings, ...checkCase($file, $sig, $label['start'], $label['colon'], $limit));
+        }
+    }
+
+    return $findings;
+}
+
+/**
+ * Index of the colon that ends the label starting at $start, ignoring nested groups and ternaries.
+ *
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ */
+function labelColon(array $sig, int $start, int $limit): ?int
+{
+    $ternary = 0;
+    for ($i = $start + 1; $i < $limit; $i++) {
+        $id = $sig[$i]['id'];
+        if (in_array($id, ['(', '[', '{', T_ATTRIBUTE], true)) {
+            $end = matching($sig, $i);
+            if ($end === null) {
+                return null;
+            }
+            $i = $end;
+
+            continue;
+        }
+        if ($id === '?') {
+            $ternary++;
+        } elseif ($id === ':') {
+            if ($ternary === 0) {
+                return $i;
+            }
+            $ternary--;
+        } elseif ($id === ';') {
+            return null;
+        }
+    }
+
+    return null;
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @return list<string>
+ */
+function checkCase(string $file, array $sig, int $start, int $colon, int $limit): array
+{
+    $findings = [];
+    $label = $sig[$start];
+
+    if ($label['id'] === T_CASE && $label['line'] !== $sig[$colon]['line']) {
+        $open = $start + 1;
+        $close = ($sig[$open]['id'] ?? null) === '(' ? matching($sig, $open) : null;
+        if ($close === null || $sig[$open]['line'] !== $label['line'] || $close + 1 !== $colon) {
+            $findings[] = $file . ':' . $label['line'] . ': a multi-line case condition must be wrapped in parentheses followed directly by the colon';
+        } elseif (!firstOnLine($sig, $close) || $sig[$close]['line'] !== $sig[$colon]['line']) {
+            $findings[] = $file . ':' . $sig[$close]['line'] . ': the closing parenthesis and colon of a multi-line case condition must stand alone on the last line';
+        } elseif (isset($sig[$colon + 1]) && $sig[$colon + 1]['line'] === $sig[$colon]['line']) {
+            $findings[] = $file . ':' . $sig[$colon]['line'] . ': the closing parenthesis and colon of a multi-line case condition must stand alone on the last line';
+        }
+    }
+
+    $first = $colon + 1;
+    $last = $limit - 1;
+    if ($first > $last) {
+        return $findings;
+    }
+
+    if ($sig[$first]['id'] === '{') {
+        $findings[] = $file . ':' . $sig[$first]['line'] . ': a case body must not be wrapped in braces';
+
+        return $findings;
+    }
+
+    if ($sig[$last]['id'] !== ';' || !endsWithTerminator($sig, $first, $last)) {
+        $findings[] = $file . ':' . $label['line'] . ': a non-empty case must end with a terminating statement (break, continue, return, throw, goto, exit)';
+    }
+
+    return $findings;
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ */
+function endsWithTerminator(array $sig, int $first, int $semicolon): bool
+{
+    $i = $semicolon - 1;
+    while ($i >= $first) {
+        $id = $sig[$i]['id'];
+        if ($id === ';') {
+            break;
+        }
+        if ($id === '}') {
+            if (($sig[$i + 1]['id'] ?? null) !== ';' || $i + 1 !== $semicolon) {
+                break;
+            }
+            $open = matchingOpen($sig, $i);
+            if ($open === null) {
+                return false;
+            }
+            $i = $open - 1;
+
+            continue;
+        }
+        if ($id === ')' || $id === ']') {
+            $open = matchingOpen($sig, $i);
+            if ($open === null) {
+                return false;
+            }
+            $i = $open - 1;
+
+            continue;
+        }
+        $i--;
+    }
+
+    $start = $i + 1;
+
+    return $start < $semicolon && in_array($sig[$start]['id'], TERMINATORS, true);
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $tokens
+ * @param list<string> $lines
+ * @return list<string>
+ */
+function checkPipe(string $file, array $tokens, array $lines): array
+{
+    $findings = [];
+    $pipe = defined('T_PIPE') ? constant('T_PIPE') : null;
+    $count = count($tokens);
+    $baseIndent = 0;
+    $lastLineChecked = 0;
+
+    for ($i = 0; $i < $count; $i++) {
+        $token = $tokens[$i];
+        $isPipe = $pipe !== null && $token['id'] === $pipe;
+        if ($pipe === null && $token['id'] === '|' && ($tokens[$i + 1]['id'] ?? null) === '>') {
+            $findings[] = $file . ':' . $token['line'] . ': pipe operator requires a PHP version that supports it';
+
+            continue;
+        }
+        if (!$isPipe) {
+            continue;
+        }
+        $before = $tokens[$i - 1] ?? null;
+        $after = $tokens[$i + 1] ?? null;
+        if ($before === null || $before['id'] !== T_WHITESPACE || $after === null || $after['id'] !== T_WHITESPACE) {
+            $findings[] = $file . ':' . $token['line'] . ': the pipe operator needs a space before and after';
+
+            continue;
+        }
+        if (str_contains($after['text'], "\n")) {
+            $findings[] = $file . ':' . $token['line'] . ': in a split pipe chain each line starts with the operator';
+        }
+        if (str_contains($before['text'], "\n") && $token['line'] !== $lastLineChecked) {
+            $lastLineChecked = $token['line'];
+            $pipeIndent = indentOf($lines, $token['line']);
+            for ($line = $token['line'] - 1; $line >= 1; $line--) {
+                if (!str_starts_with(ltrim($lines[$line - 1] ?? ''), '|>')) {
+                    $baseIndent = indentOf($lines, $line);
+
+                    break;
+                }
+            }
+            if ($pipeIndent <= $baseIndent) {
+                $findings[] = $file . ':' . $token['line'] . ': continuation lines of a pipe chain must be indented';
+            }
+        }
+    }
+
+    return $findings;
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $tokens
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @return list<string>
+ */
+function checkEmptyClosure(string $file, array $tokens, array $sig): array
+{
+    $findings = [];
+    foreach ($sig as $i => $token) {
+        if ($token['id'] !== T_FUNCTION || ($sig[$i + 1]['id'] ?? null) !== '(') {
+            continue;
+        }
+        $close = matching($sig, $i + 1);
+        if ($close === null) {
+            continue;
+        }
+        $brace = null;
+        for ($k = $close + 1; $k < count($sig); $k++) {
+            if ($sig[$k]['id'] === ';' || $sig[$k]['id'] === T_DOUBLE_ARROW) {
+                break;
+            }
+            if ($sig[$k]['id'] === '(') {
+                $end = matching($sig, $k);
+                $k = $end ?? $k;
+
+                continue;
+            }
+            if ($sig[$k]['id'] === '{') {
+                $brace = $k;
+
+                break;
+            }
+        }
+        if ($brace === null || ($sig[$brace + 1]['id'] ?? null) !== '}') {
+            continue;
+        }
+        $inner = '';
+        $started = false;
+        foreach ($tokens as $raw) {
+            if ($raw === $sig[$brace]) {
+                $started = true;
+
+                continue;
+            }
+            if ($raw === $sig[$brace + 1]) {
+                break;
+            }
+            if ($started) {
+                $inner .= $raw['text'];
+            }
+        }
+        $previous = $sig[$brace - 1];
+        $gap = '';
+        foreach ($tokens as $position => $raw) {
+            if ($raw === $sig[$brace]) {
+                $gap = $tokens[$position - 1]['id'] === T_WHITESPACE ? $tokens[$position - 1]['text'] : '';
+
+                break;
+            }
+        }
+        if ($inner !== '' || $gap !== ' ' || $previous['line'] !== $sig[$brace]['line']) {
+            $findings[] = $file . ':' . $token['line'] . ': a closure with an empty body must be written as " {}" on the same line';
+        }
+    }
+
+    return $findings;
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @param list<string> $lines
+ * @return list<string>
+ */
+function checkAnonymousClassAttributes(string $file, array $sig, array $lines): array
+{
+    $findings = [];
+    foreach ($sig as $i => $token) {
+        if ($token['id'] !== T_NEW || ($sig[$i + 1]['id'] ?? null) !== T_ATTRIBUTE) {
+            continue;
+        }
+        $k = $i + 1;
+        $firstLine = $sig[$k]['line'];
+        $lastEnd = null;
+        while (($sig[$k]['id'] ?? null) === T_ATTRIBUTE) {
+            $end = matching($sig, $k);
+            if ($end === null) {
+                break;
+            }
+            if (!firstOnLine($sig, $k)) {
+                $findings[] = $file . ':' . $sig[$k]['line'] . ': each attribute of an anonymous class starts on its own line';
+            }
+            if (indentOf($lines, $sig[$k]['line']) !== indentOf($lines, $token['line']) + 4) {
+                $findings[] = $file . ':' . $sig[$k]['line'] . ': attributes of an anonymous class are indented once relative to the line with new';
+            }
+            $lastEnd = $end;
+            $k = $end + 1;
+        }
+        if ($firstLine !== $token['line'] + 1) {
+            $findings[] = $file . ':' . $firstLine . ': attributes of an anonymous class start on the line after new';
+        }
+        if ($lastEnd === null || !isset($sig[$lastEnd + 1])) {
+            continue;
+        }
+        $declaration = $sig[$lastEnd + 1];
+        if ($declaration['line'] <= $sig[$lastEnd]['line']
+            || indentOf($lines, $declaration['line']) !== indentOf($lines, $firstLine)) {
+            $findings[] = $file . ':' . $declaration['line'] . ': the anonymous class declaration starts on a new line with the indentation of its attributes';
+        }
+    }
+
+    return $findings;
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @return list<string>
+ */
+function checkEnumMembers(string $file, array $sig): array
+{
+    $findings = [];
+    foreach ($sig as $i => $token) {
+        if ($token['id'] !== T_ENUM || ($sig[$i + 1]['id'] ?? null) !== T_STRING) {
+            continue;
+        }
+        $open = null;
+        for ($k = $i + 2; $k < count($sig); $k++) {
+            if ($sig[$k]['id'] === '{') {
+                $open = $k;
+
+                break;
+            }
+        }
+        $close = $open === null ? null : matching($sig, $open);
+        if ($open === null || $close === null) {
+            continue;
+        }
+        for ($k = $open + 1; $k < $close; $k++) {
+            if ($sig[$k]['id'] === T_PROTECTED) {
+                $findings[] = $file . ':' . $sig[$k]['line'] . ': enum members use private instead of protected';
+            }
+        }
+    }
+
+    return $findings;
+}
+
+/**
+ * @param list<array{id: int|string, text: string, line: int}> $sig
+ * @return list<string>
+ */
+function checkArrayBrackets(string $file, array $sig): array
+{
+    $findings = [];
+    foreach ($sig as $i => $token) {
+        if ($token['id'] !== '[' || $i === 0 || !firstOnLine($sig, $i)) {
+            continue;
+        }
+        if (in_array($sig[$i - 1]['id'], EXPRESSION_PREVIOUS, true)) {
+            continue;
+        }
+        $close = matching($sig, $i);
+        if ($close !== null && $sig[$close]['line'] > $token['line']) {
+            $findings[] = $file . ':' . $token['line'] . ': the opening bracket of a multi-line array must not stand alone on its line';
+        }
+    }
+
+    return $findings;
+}
 
 /**
  * @return list<string> findings as "file:line: message"
  */
 function checkSource(string $file, string $source): array
 {
-    $findings = [];
-    $tokens = token_get_all($source);
-    $count = count($tokens);
+    $tokens = tokenize($source);
+    $sig = significant($tokens);
+    $lines = explode("\n", $source);
 
-    $next = static function (int $from) use ($tokens, $count): ?array {
-        for ($i = $from + 1; $i < $count; $i++) {
-            $token = $tokens[$i];
-            if (is_array($token) && in_array($token[0], [T_WHITESPACE, T_COMMENT, T_DOC_COMMENT], true)) {
-                continue;
-            }
-
-            return [$i, $token];
-        }
-
-        return null;
-    };
-
-    for ($i = 0; $i < $count; $i++) {
-        $token = $tokens[$i];
-        if (!is_array($token)) {
-            if ($token === '|' && ($tokens[$i + 1] ?? null) === '>') {
-                $findings[] = $file . ': pipe operator is not used in this repository';
-            }
-
-            continue;
-        }
-
-        $line = $token[2];
-
-        if ($token[0] === T_CLONE) {
-            $following = $next($i);
-            if ($following === null || $following[1] !== '(') {
-                $findings[] = $file . ':' . $line . ': clone must be written with parentheses';
-            }
-        }
-
-        if ($token[0] === T_SWITCH) {
-            $findings[] = $file . ':' . $line . ': switch is not used (PER 3.1 case rules are not mechanically verified)';
-        }
-
-        if ($token[0] === T_FUNCTION) {
-            $following = $next($i);
-            if ($following !== null && $following[1] === '(') {
-                $depth = 0;
-                $j = $following[0];
-                for (; $j < $count; $j++) {
-                    $current = $tokens[$j];
-                    if ($current === '(') {
-                        $depth++;
-                    } elseif ($current === ')') {
-                        $depth--;
-                        if ($depth === 0) {
-                            break;
-                        }
-                    }
-                }
-                $brace = null;
-                for ($k = $j + 1; $k < $count; $k++) {
-                    $current = $tokens[$k];
-                    if ($current === ';' || (is_array($current) && $current[0] === T_DOUBLE_ARROW)) {
-                        break;
-                    }
-                    if ($current === '{') {
-                        $brace = [$k, $current];
-
-                        break;
-                    }
-                }
-                if ($brace !== null && $brace[1] === '{') {
-                    $inner = $next($brace[0]);
-                    if ($inner !== null && $inner[1] === '}') {
-                        $between = '';
-                        for ($k = $brace[0] + 1; $k < $inner[0]; $k++) {
-                            $between .= is_array($tokens[$k]) ? $tokens[$k][1] : $tokens[$k];
-                        }
-                        if ($between !== '') {
-                            $findings[] = $file . ':' . $line . ': empty closure body must be written as {}';
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    foreach (explode("\n", $source) as $index => $text) {
-        if (preg_match('/(=>|=|\()\s*$/', rtrim($text)) === 1) {
-            continue;
-        }
-        if (preg_match('/^\s*\[\s*$/', $text) === 1) {
-            $findings[] = $file . ':' . ($index + 1) . ': opening bracket of a multi-line array must not stand alone';
-        }
-    }
-
-    return $findings;
+    return [
+        ...checkClone($file, $sig),
+        ...checkSwitch($file, $sig),
+        ...checkPipe($file, $tokens, $lines),
+        ...checkEmptyClosure($file, $tokens, $sig),
+        ...checkAnonymousClassAttributes($file, $sig, $lines),
+        ...checkEnumMembers($file, $sig),
+        ...checkArrayBrackets($file, $sig),
+    ];
 }
 
 /**
@@ -125,6 +578,7 @@ function checkSource(string $file, string $source): array
  */
 function collectFiles(array $paths): array
 {
+    $skipped = ['vendor', '.git', 'docs', 'node_modules', '.phpunit.cache', '.phpstan'];
     $files = [];
     foreach ($paths as $path) {
         if (is_file($path)) {
@@ -135,8 +589,12 @@ function collectFiles(array $paths): array
         if (!is_dir($path)) {
             continue;
         }
-        $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS));
-        foreach ($iterator as $entry) {
+        $directory = new RecursiveDirectoryIterator($path, FilesystemIterator::SKIP_DOTS);
+        $filter = new RecursiveCallbackFilterIterator(
+            $directory,
+            static fn(SplFileInfo $entry): bool => !($entry->isDir() && in_array($entry->getFilename(), $skipped, true)),
+        );
+        foreach (new RecursiveIteratorIterator($filter) as $entry) {
             if ($entry instanceof SplFileInfo && $entry->isFile() && $entry->getExtension() === 'php') {
                 $files[] = $entry->getPathname();
             }
@@ -147,10 +605,9 @@ function collectFiles(array $paths): array
     return $files;
 }
 
+/** @var list<string> $argv */
 $arguments = array_slice($argv, 1);
-$root = dirname(__DIR__);
-$paths = $arguments !== [] ? $arguments : [$root . '/src', $root . '/tests', $root . '/scripts'];
-$files = collectFiles($paths);
+$files = collectFiles($arguments !== [] ? $arguments : [dirname(__DIR__)]);
 
 if ($files === []) {
     fwrite(STDERR, "No PHP files found to verify.\n");
@@ -164,14 +621,14 @@ foreach ($files as $file) {
         fwrite(STDERR, 'Cannot read ' . $file . "\n");
         exit(1);
     }
-    foreach (checkSource($file, $source) as $finding) {
-        $all[] = $finding;
-    }
+    array_push($all, ...checkSource($file, $source));
 }
 
 foreach ($all as $finding) {
     fwrite(STDERR, $finding . "\n");
 }
 
-echo $all === [] ? 'PER-CS 3.1 delta check: ' . count($files) . " files, no findings\n" : '';
+if ($all === []) {
+    echo 'PER-CS 3.1 delta check: ' . count($files) . " files, no findings\n";
+}
 exit($all === [] ? 0 : 1);
