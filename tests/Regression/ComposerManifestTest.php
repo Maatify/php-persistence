@@ -137,21 +137,25 @@ final class ComposerManifestTest extends TestCase
         }
     }
 
-    public function testScriptsReferenceOnlyExistingSuites(): void
+    public function testScriptsReferenceOnlyExistingSuitesAndTheCanonicalIntegrationEntry(): void
     {
         $manifest = self::manifest();
         $scripts = $manifest['scripts'];
         self::assertIsArray($scripts);
 
-        self::assertArrayNotHasKey('test:integration', $scripts);
-        foreach (['analyse', 'format', 'format:check', 'test', 'test:unit', 'test:regression'] as $name) {
+        foreach (['analyse', 'format', 'format:check', 'syntax', 'whitespace', 'test', 'test:unit', 'test:regression', 'test:integration'] as $name) {
             self::assertArrayHasKey($name, $scripts);
         }
+        self::assertSame(['@test:unit', '@test:regression', '@test:integration'], $scripts['test']);
+        self::assertSame('@php scripts/integration.php', $scripts['test:integration']);
+        self::assertSame('phpunit --testsuite unit', $scripts['test:unit']);
+        self::assertSame('phpunit --testsuite regression', $scripts['test:regression']);
 
         $xml = file_get_contents(dirname(__DIR__, 2) . '/phpunit.xml');
         self::assertIsString($xml);
-        self::assertStringContainsString('<testsuite name="unit">', $xml);
-        self::assertStringContainsString('<testsuite name="regression">', $xml);
-        self::assertStringNotContainsString('integration', $xml);
+        foreach (['unit', 'regression', 'integration'] as $suite) {
+            self::assertStringContainsString('<testsuite name="' . $suite . '">', $xml);
+        }
+        self::assertStringContainsString('failOnSkipped="true"', $xml);
     }
 }

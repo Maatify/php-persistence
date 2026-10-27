@@ -10,7 +10,9 @@
          failOnDeprecation="true"
          failOnEmptyTestSuite="true"
          failOnNotice="true"
+         failOnIncomplete="true"
          failOnRisky="true"
+         failOnSkipped="true"
          failOnWarning="true"
          displayDetailsOnTestsThatTriggerDeprecations="true"
          displayDetailsOnTestsThatTriggerWarnings="true"
@@ -21,6 +23,9 @@
         </testsuite>
         <testsuite name="regression">
             <directory>tests/Regression</directory>
+        </testsuite>
+        <testsuite name="integration">
+            <directory>tests/Integration</directory>
         </testsuite>
     </testsuites>
     <source>
