@@ -167,7 +167,7 @@ final class IntegrationOrchestrationRobustnessTest extends TestCase
 
         self::assertSame(0, $status, $err);
         self::assertSame('false', $out);
-        self::assertStringContainsString('Teardown left resources', $err);
+        self::assertStringContainsString('Teardown incomplete', $err);
     }
 
     public function testExecuteStopsAHungCommandAtItsDeadline(): void
@@ -250,5 +250,107 @@ final class IntegrationOrchestrationRobustnessTest extends TestCase
 
         self::assertSame(2, $status, $err);
         self::assertStringContainsString('PP_UP_TIMEOUT_SECONDS must be a whole number of seconds', $err);
+    }
+
+    public function testFailedComposeDownIsNeverReportedAsVerifiedEvenWhenNoResourceRemains(): void
+    {
+        $support = dirname(__DIR__, 2) . '/scripts/integration-support.php';
+        $directory = sys_get_temp_dir() . '/ppstub' . bin2hex(random_bytes(4));
+        mkdir($directory);
+        $stub = $directory . '/docker';
+        $this->cleanup = [$stub, $directory];
+        file_put_contents($stub, <<<'SH'
+            #!/bin/sh
+            case " $* " in
+              *" down "*) echo "daemon unavailable" >&2; exit 1 ;;
+            esac
+            exit 0
+            SH);
+        chmod($stub, 0755);
+        $child = 'require ' . var_export($support, true) . ';'
+            . 'echo json_encode(teardown(["docker", "compose"], "phppersist-it-test", [], "/tmp"));';
+
+        [$status, $out, $err] = self::runWithDeadline([PHP_BINARY, '-r', $child], ['PATH' => $directory . ':/usr/bin:/bin']);
+
+        self::assertSame(0, $status, $err);
+        self::assertSame('false', $out, 'the resource queries are empty, but the failed down must still fail the teardown');
+        self::assertStringContainsString('docker compose down failed with status 1', $err);
+        self::assertStringContainsString('daemon unavailable', $err);
+    }
+
+    public function testTeardownRetriesComposeDownOnceAfterATransientFailure(): void
+    {
+        $support = dirname(__DIR__, 2) . '/scripts/integration-support.php';
+        $directory = sys_get_temp_dir() . '/ppstub' . bin2hex(random_bytes(4));
+        mkdir($directory);
+        $stub = $directory . '/docker';
+        $marker = $directory . '/failed-once';
+        $this->cleanup = [$stub, $marker, $directory];
+        file_put_contents($stub, <<<'SH'
+            #!/bin/sh
+            case " $* " in
+              *" down "*)
+                if [ ! -f "$(dirname "$0")/failed-once" ]; then touch "$(dirname "$0")/failed-once"; exit 1; fi
+                ;;
+            esac
+            exit 0
+            SH);
+        chmod($stub, 0755);
+        $child = 'require ' . var_export($support, true) . ';'
+            . 'echo json_encode(teardown(["docker", "compose"], "phppersist-it-test", [], "/tmp"));';
+
+        [$status, $out, $err] = self::runWithDeadline([PHP_BINARY, '-r', $child], ['PATH' => $directory . ':/usr/bin:/bin']);
+
+        self::assertSame(0, $status, $err);
+        self::assertStringContainsString('TEARDOWN VERIFIED', $out);
+        self::assertStringEndsWith('true', $out);
+    }
+
+    public function testTheOverallBudgetStopsWorkEarlyEnoughToLeaveTimeForTeardown(): void
+    {
+        $directory = sys_get_temp_dir() . '/ppstub' . bin2hex(random_bytes(4));
+        mkdir($directory);
+        $log = $directory . '/calls.log';
+        $stub = $directory . '/docker';
+        $this->cleanup = [$stub, $log, $directory];
+        file_put_contents($stub, <<<'SH'
+            #!/bin/sh
+            echo "$*" >> "$(dirname "$0")/calls.log"
+            case " $* " in
+              *" up "*) exec sleep 120 ;;
+            esac
+            exit 0
+            SH);
+        chmod($stub, 0755);
+
+        $start = microtime(true);
+        $environment = [
+            'PATH' => $directory . ':/usr/bin:/bin',
+            'PP_TEARDOWN_TIMEOUT_SECONDS' => '5',
+            'PP_TOTAL_BUDGET_SECONDS' => '38',
+        ];
+        [$status, $out, $err] = self::runWithDeadline(
+            [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/integration.php', '--cell=mysql-8.4.13'],
+            $environment,
+        );
+
+        self::assertSame(3, $status, $out . $err);
+        self::assertMatchesRegularExpression('/timed out after [1-3] seconds/', $err, 'startup was limited by the budget (38 s minus the 35 s reserve), not by its own 660 s');
+        self::assertStringContainsString('TEARDOWN VERIFIED', $out);
+        self::assertLessThan(30, microtime(true) - $start);
+        $calls = file_get_contents($log);
+        self::assertIsString($calls);
+        self::assertMatchesRegularExpression('/compose .* down --volumes --remove-orphans/', $calls);
+    }
+
+    public function testABudgetThatCannotCoverTheTeardownReserveIsRejectedUpFront(): void
+    {
+        [$status, , $err] = self::runWithDeadline(
+            [PHP_BINARY, dirname(__DIR__, 2) . '/scripts/integration.php', '--cell=mysql-8.4.13'],
+            ['PP_TOTAL_BUDGET_SECONDS' => '10', 'PATH' => '/usr/bin:/bin'],
+        );
+
+        self::assertSame(2, $status, $err);
+        self::assertStringContainsString('must exceed the teardown reserve of 210 seconds', $err);
     }
 }

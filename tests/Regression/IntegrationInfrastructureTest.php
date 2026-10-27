@@ -184,6 +184,40 @@ final class IntegrationInfrastructureTest extends TestCase
         self::assertSame(['workflow-lint', 'static', 'compat', 'integration', 'exploratory', 'ci-gate'], $names);
     }
 
+    private static function constantSeconds(string $source, string $name): int
+    {
+        self::assertSame(1, preg_match('/^const ' . $name . ' = (\d+);$/m', $source, $matches), $name);
+        self::assertArrayHasKey(1, $matches);
+
+        return (int) $matches[1];
+    }
+
+    private static function jobTimeoutMinutes(string $workflow, string $job): int
+    {
+        self::assertSame(1, preg_match('/^  ' . $job . ':\n(?:    .*\n|\n)*?    timeout-minutes: (\d+)/m', $workflow, $matches), $job);
+        self::assertArrayHasKey(1, $matches);
+
+        return (int) $matches[1];
+    }
+
+    public function testJobTimeoutsCoverTheOrchestrationBudgetTeardownAndSetup(): void
+    {
+        $support = self::read('scripts/integration-support.php');
+        $needed = self::constantSeconds($support, 'TOTAL_BUDGET_SECONDS')
+            + self::constantSeconds($support, 'TEARDOWN_TIMEOUT_SECONDS')
+            + self::constantSeconds($support, 'TEARDOWN_MARGIN_SECONDS')
+            + 600;
+
+        $workflow = self::read('.github/workflows/ci.yml');
+        foreach (['integration', 'exploratory'] as $job) {
+            self::assertGreaterThanOrEqual(
+                $needed,
+                self::jobTimeoutMinutes($workflow, $job) * 60,
+                $job . ' job timeout must exceed the orchestration budget, the teardown reserve and 10 minutes of setup',
+            );
+        }
+    }
+
     public function testGateInspectsEveryRequiredJob(): void
     {
         $workflow = self::read('.github/workflows/ci.yml');

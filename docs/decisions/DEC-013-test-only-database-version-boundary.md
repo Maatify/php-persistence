@@ -26,5 +26,5 @@
 ## Consequences
 
 - The cells and their digests in `docker/integration-matrix.json` are ratified test targets. Adding, removing or re-pinning a required cell, or promoting the exploratory cell, needs a new record that supersedes this one.
-- Re-pinning an image to a newer digest of the same version is a reviewed change of the matrix file with its own evidence and does not need a new decision.
+- Refreshing a digest does not need a new decision only when all of these hold: the tag and the expected `SELECT VERSION()` are unchanged (same version, rebuilt image); the registry evidence (old and new index digest, platforms) is in the pull request; and the full CI matrix passes on the new digests in that pull request. Any other change — a different version, a new or removed cell, a changed tier, or moving the exploratory cell to required — needs a new record that supersedes this one.
 - The README and the Package Reference must not repeat these versions as support claims until DEC-008's conditions are met.

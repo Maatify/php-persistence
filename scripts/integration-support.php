@@ -14,6 +14,8 @@ const HEALTH_TIMEOUT_SECONDS = 240;
 const PROBE_TIMEOUT_SECONDS = 120;
 const COMMAND_TIMEOUT_SECONDS = 120;
 const TEARDOWN_TIMEOUT_SECONDS = 180;
+const TOTAL_BUDGET_SECONDS = 1500;
+const TEARDOWN_MARGIN_SECONDS = 30;
 const TIMEOUT_EXIT_STATUS = 124;
 const TERMINATION_GRACE_SECONDS = 5;
 
@@ -32,6 +34,65 @@ function secondsFromEnvironment(string $name, int $default): int
     }
 
     return (int) $value;
+}
+
+/**
+ * Seconds granted to the teardown commands; also the core of the time reserved for cleanup.
+ */
+function teardownSeconds(): int
+{
+    return secondsFromEnvironment('PP_TEARDOWN_TIMEOUT_SECONDS', TEARDOWN_TIMEOUT_SECONDS);
+}
+
+/**
+ * Time that the overall budget always keeps free for teardown and its verification.
+ */
+function reserveSeconds(): int
+{
+    return teardownSeconds() + TEARDOWN_MARGIN_SECONDS;
+}
+
+/**
+ * Starts the overall budget of this orchestration run. All work (startup, probes, suites,
+ * helper commands) must end early enough to leave reserveSeconds() for teardown, so the
+ * whole run finishes inside the budget that the CI job timeout is sized for.
+ */
+function startBudget(): void
+{
+    $budget = secondsFromEnvironment('PP_TOTAL_BUDGET_SECONDS', TOTAL_BUDGET_SECONDS);
+    if ($budget <= reserveSeconds()) {
+        fail(EXIT_USAGE, 'PP_TOTAL_BUDGET_SECONDS must exceed the teardown reserve of ' . reserveSeconds() . ' seconds');
+    }
+    OrchestrationBudget::$deadline = microtime(true) + $budget;
+}
+
+/**
+ * Absolute end of the overall budget; null until startBudget() ran.
+ */
+final class OrchestrationBudget
+{
+    public static ?float $deadline = null;
+}
+
+/**
+ * Whole seconds of work that still fit in the budget once the teardown reserve is kept free.
+ */
+function remainingWorkSeconds(): int
+{
+    $deadline = OrchestrationBudget::$deadline;
+    if ($deadline === null) {
+        return PHP_INT_MAX;
+    }
+
+    return (int) floor($deadline - microtime(true)) - reserveSeconds();
+}
+
+/**
+ * Limits a command's own timeout to what the overall budget still allows (at least one second).
+ */
+function boxed(int $ownSeconds): int
+{
+    return max(1, min($ownSeconds, remainingWorkSeconds()));
 }
 
 /**
@@ -206,17 +267,25 @@ function parseOptions(array $arguments): array
  */
 function teardown(array $compose, string $project, array $environment, string $root): bool
 {
-    execute([...$compose, 'down', '--volumes', '--remove-orphans', '--timeout', '30'], $environment, $root, TEARDOWN_TIMEOUT_SECONDS);
+    $down = [...$compose, 'down', '--volumes', '--remove-orphans', '--timeout', '30'];
+    [$downStatus, , $downError] = execute($down, $environment, $root, teardownSeconds());
+    if ($downStatus !== 0) {
+        // One retry: a transient daemon error should not leave the project behind.
+        [$downStatus, , $downError] = execute($down, $environment, $root, teardownSeconds());
+    }
     $label = 'label=com.docker.compose.project=' . $project;
     $remaining = [];
+    if ($downStatus !== 0) {
+        $remaining[] = 'docker compose down failed with status ' . $downStatus . ': ' . trim($downError);
+    }
     foreach ([['ps', '-aq'], ['volume', 'ls', '-q'], ['network', 'ls', '-q']] as $query) {
-        [$status, $out] = execute(['docker', ...$query, '--filter', $label]);
+        [$status, $out] = execute(['docker', ...$query, '--filter', $label], [], null, teardownSeconds());
         if ($status !== 0 || trim($out) !== '') {
             $remaining[] = implode(' ', $query);
         }
     }
     if ($remaining !== []) {
-        fwrite(STDERR, 'Teardown left resources for project ' . $project . ': ' . implode(', ', $remaining) . "\n");
+        fwrite(STDERR, 'Teardown incomplete for project ' . $project . ': ' . implode('; ', $remaining) . "\n");
 
         return false;
     }
@@ -266,16 +335,16 @@ function connect(array $suiteEnvironment, string $user, string $password): PDO
  */
 function runOnService(string $root, string $cellKey, array $cell, array $options, array $environment, array $compose): int
 {
-    [$upStatus, , $upError] = execute([...$compose, 'up', '--detach', '--wait', '--wait-timeout', (string) HEALTH_TIMEOUT_SECONDS], $environment, $root, secondsFromEnvironment('PP_UP_TIMEOUT_SECONDS', HEALTH_TIMEOUT_SECONDS + 420));
+    [$upStatus, , $upError] = execute([...$compose, 'up', '--detach', '--wait', '--wait-timeout', (string) HEALTH_TIMEOUT_SECONDS], $environment, $root, boxed(secondsFromEnvironment('PP_UP_TIMEOUT_SECONDS', HEALTH_TIMEOUT_SECONDS + 420)));
     if ($upStatus !== 0) {
         fwrite(STDERR, "Service did not become healthy:\n" . $upError . "\n");
-        [, $logs] = execute([...$compose, 'logs', '--tail', '40'], $environment, $root);
+        [, $logs] = execute([...$compose, 'logs', '--tail', '40'], $environment, $root, boxed(COMMAND_TIMEOUT_SECONDS));
         fwrite(STDERR, $logs . "\n");
 
         return EXIT_INFRASTRUCTURE;
     }
 
-    [$portStatus, $portOut] = execute([...$compose, 'port', 'database', '3306'], $environment, $root);
+    [$portStatus, $portOut] = execute([...$compose, 'port', 'database', '3306'], $environment, $root, boxed(COMMAND_TIMEOUT_SECONDS));
     if ($portStatus !== 0 || preg_match('/^(?:127\.0\.0\.1|\[::1\]|0\.0\.0\.0):(\d+)$/m', trim($portOut), $portMatch) !== 1) {
         fwrite(STDERR, 'Cannot discover the published loopback port: ' . $portOut . "\n");
 
@@ -294,7 +363,7 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
         'PHP_PERSISTENCE_IT_PASSWORD' => $password,
     ];
 
-    $deadline = time() + PROBE_TIMEOUT_SECONDS;
+    $deadline = time() + boxed(PROBE_TIMEOUT_SECONDS);
     $pdo = null;
     while ($pdo === null) {
         try {
@@ -314,7 +383,7 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
     $image = $environment['PP_DB_IMAGE'];
     $version = scalar($pdo, 'SELECT VERSION()');
     $comment = scalar($pdo, 'SELECT @@version_comment');
-    [, $digestOut] = execute(['docker', 'image', 'inspect', $image, '--format', '{{index .RepoDigests 0}} {{.Architecture}}']);
+    [, $digestOut] = execute(['docker', 'image', 'inspect', $image, '--format', '{{index .RepoDigests 0}} {{.Architecture}}'], [], null, boxed(COMMAND_TIMEOUT_SECONDS));
     echo 'SERVER-IDENTITY ' . json_encode([
         'cell' => $cellKey,
         'image' => $image,
@@ -332,8 +401,13 @@ function runOnService(string $root, string $cellKey, array $cell, array $options
 
     $phpunit = [PHP_BINARY, $root . '/vendor/bin/phpunit', '--testsuite', 'integration', '--no-progress'];
     for ($pass = 1; $pass <= $options['suitePasses']; $pass++) {
+        if (remainingWorkSeconds() < 1) {
+            fwrite(STDERR, "The overall time budget is exhausted; stopping before the next suite pass.\n");
+
+            return EXIT_INFRASTRUCTURE;
+        }
         echo '--- suite pass ' . $pass . '/' . $options['suitePasses'] . "\n";
-        if (passthrough($phpunit, $suiteEnvironment, $root, secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900)) !== 0) {
+        if (passthrough($phpunit, $suiteEnvironment, $root, boxed(secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 900))) !== 0) {
             return EXIT_TEST_FAILURE;
         }
         try {

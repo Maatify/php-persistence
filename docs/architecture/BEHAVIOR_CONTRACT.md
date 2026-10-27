@@ -1,6 +1,6 @@
 # Behavior Contract B-01 to B-16
 
-Status: contract for later work units. No test exists in this repository and none was run for this document. Every "required tests" entry is a future obligation.
+Status: contract for later work units. The Integration tests of WU-5 prove server and `pdo_mysql` properties only; no test of this repository verifies a behavior row below. Every "required tests" entry is a future obligation.
 
 Type mapping is in [CONTRACT_MATRIX.md](./CONTRACT_MATRIX.md). Baseline strategy is [DEC-007](../decisions/DEC-007-legacy-source-baseline-and-deprecated-retirement.md). Column labels: **A** = legacy `v1.4.0` (`fc1459b`), **B** = legacy unreleased `main` (`1f6a7aa`), **C** = this package.
 

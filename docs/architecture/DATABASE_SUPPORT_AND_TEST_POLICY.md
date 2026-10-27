@@ -1,6 +1,6 @@
 # Database Support, Compatibility and Test Policy
 
-Status: policy and requirements for WU-5 and later. Nothing here is a support claim. No test was run for this document and this repository has no CI.
+Status: policy and requirements for WU-5 and later. Nothing here is a support claim. The CI of WU-5 runs infrastructure-level tests on the real engines ([CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md)); no test verifies a package capability.
 
 Ratified policy: [DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md). Test-only version boundary: [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) (`ACTIVE`). MariaDB `1020` contract: [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) (`PROPOSED`).
 

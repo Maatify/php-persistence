@@ -137,7 +137,7 @@ jobs:
   integration:
     name: Integration ${{ matrix.cell }} PHP ${{ matrix.php }}
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -178,7 +178,7 @@ jobs:
     name: Exploratory MySQL Innovation (not required)
     if: github.event_name == 'workflow_dispatch' && inputs.exploratory
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       # actions/checkout v7.0.1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1

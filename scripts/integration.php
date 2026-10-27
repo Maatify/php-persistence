@@ -27,6 +27,8 @@ $matrix = loadMatrix($root);
 // Reject an invalid timeout setting before anything is started.
 secondsFromEnvironment('PP_UP_TIMEOUT_SECONDS', 1);
 secondsFromEnvironment('PP_SUITE_TIMEOUT_SECONDS', 1);
+secondsFromEnvironment('PP_TEARDOWN_TIMEOUT_SECONDS', 1);
+startBudget();
 $requested = $options['cell'] ?? (getenv('PP_DB_CELL') !== false && getenv('PP_DB_CELL') !== '' ? (string) getenv('PP_DB_CELL') : $matrix['default']);
 if (!array_key_exists($requested, $matrix['cells'])) {
     fail(EXIT_USAGE, 'Unknown cell "' . $requested . '". Allowed: ' . implode(', ', array_keys($matrix['cells'])));
@@ -48,6 +50,12 @@ if (!is_file($root . '/vendor/bin/phpunit')) {
 
 $overall = 0;
 for ($run = 1; $run <= $options['freshRuns']; $run++) {
+    if (remainingWorkSeconds() < 1) {
+        fwrite(STDERR, "The overall time budget is exhausted; not starting another lifecycle.\n");
+        $overall = EXIT_INFRASTRUCTURE;
+
+        break;
+    }
     $result = lifecycle($root, $requested, $cell, $options, $run);
     if ($result !== 0) {
         $overall = $result;
