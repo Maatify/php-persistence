@@ -8,6 +8,7 @@ use Maatify\PhpPersistence\Tests\Support\Transaction\SavepointTransactionPdo;
 use Maatify\PhpPersistence\Transaction\Exception\TransactionExecutionException;
 use Maatify\PhpPersistence\Transaction\Repository\PdoSavepointTransactionRunner;
 use Maatify\PhpPersistence\Transaction\Repository\SavepointScope;
+use PDO;
 use PDOException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
@@ -32,12 +33,20 @@ use Throwable;
  * direct low-level use of SavepointScope, proving the two call shapes the
  * helper supports agree.
  *
- * Deliberately not ported: the legacy OperationSavepoint::begin() guard that
- * fails when the driver reports no active transaction right after a
- * successful SAVEPOINT. That guard is not part of this capability's
- * characterized runner behavior (B-11) and is left for Ordering (WU-8) to add
- * on top of begin() if its own contract needs it; adding it here would be an
- * unauthorized behavior change under DEC-011 item 3.
+ * testBeginFailsBeforeAnyMutationWhenTheDriverReportsNoActiveTransaction and
+ * testBeginFailsWhenTheSavepointReplyRevealsAnEndedTransaction below port the
+ * legacy OperationSavepoint::begin() guard verbatim: it fails before any
+ * mutation when the driver reports no active transaction right after a
+ * successful SAVEPOINT (a server-aborted caller transaction the caller
+ * swallowed). The guard was first left out of this shared helper on the
+ * theory that Transaction's own characterized runner behavior (B-11) never
+ * needs it; PR #13 review #1 (finding F13-01) held that DEC-011's "one
+ * savepoint helper... consumed by Ordering" requires carrying it in the
+ * shared helper now, since dropping it changed OperationSavepoint's
+ * characterized contract. Restoring it does not change any Transaction Gen2
+ * runner test in this file or in PdoSavepointTransactionRunnerTest: none of
+ * those scenarios reports the transaction as inactive immediately after a
+ * successful SAVEPOINT.
  */
 final class SavepointScopeTest extends TestCase
 {
@@ -160,6 +169,51 @@ final class SavepointScopeTest extends TestCase
         SavepointScope::begin($pdo)->undoOrFail();
 
         self::assertCount(3, $pdo->executedStatements);
+    }
+
+    public function testBeginFailsBeforeAnyMutationWhenTheDriverReportsNoActiveTransaction(): void
+    {
+        $pdo = new SavepointTransactionPdo(transactionActive: false);
+
+        $this->expectException(TransactionExecutionException::class);
+
+        try {
+            SavepointScope::begin($pdo);
+        } finally {
+            self::assertSame(['SAVEPOINT SP'], $this->normalize($pdo->executedStatements));
+            self::assertSame(0, $pdo->beginTransactionCalls + $pdo->commitCalls + $pdo->rollBackCalls);
+        }
+    }
+
+    public function testBeginFailsWhenTheSavepointReplyRevealsAnEndedTransaction(): void
+    {
+        $pdo = new class (true) extends PDO {
+            /** @var list<string> */
+            public array $executed = [];
+
+            public function __construct(private bool $active) {}
+
+            public function inTransaction(): bool
+            {
+                return $this->active;
+            }
+
+            public function exec(string $statement): int
+            {
+                $this->executed[] = $statement;
+                $this->active = false;
+
+                return 0;
+            }
+        };
+
+        try {
+            SavepointScope::begin($pdo);
+            self::fail('Expected the dead-transaction guard.');
+        } catch (TransactionExecutionException) {
+        }
+
+        self::assertCount(1, $pdo->executed);
     }
 
     public function testHelperIsAnInternalFinalReadonlyClass(): void

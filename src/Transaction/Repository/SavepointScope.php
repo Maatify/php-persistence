@@ -26,6 +26,11 @@ use Throwable;
  *   non-callback consumer (Ordering, where a failed move returns `false`
  *   instead of throwing) can reuse this helper without a second
  *   implementation; it is not called by this capability's own runner.
+ * - {@see self::begin()} fails before any mutation when the driver reports no
+ *   active transaction right after the SAVEPOINT reply: a server-aborted
+ *   caller transaction that the caller swallowed shows up here on the
+ *   measured engines (legacy `OperationSavepoint`; restored in the shared
+ *   helper after PR #13 review #1, finding F13-01).
  *
  * It never begins, commits, fully rolls back or retries the caller-owned
  * transaction, and never retries the savepoint itself.
@@ -39,12 +44,17 @@ final readonly class SavepointScope
     private function __construct(private PDO $pdo, private string $name) {}
 
     /**
-     * @throws TransactionExecutionException when SAVEPOINT returns false
+     * @throws TransactionExecutionException when SAVEPOINT returns false, or when the driver
+     *                                        reports no active transaction right after it succeeds
      */
     public static function begin(PDO $pdo): self
     {
         $scope = new self($pdo, self::SAVEPOINT_PREFIX . bin2hex(random_bytes(16)));
         $scope->executeControlStatement('SAVEPOINT ' . $scope->name);
+
+        if (!$pdo->inTransaction()) {
+            throw new TransactionExecutionException('The caller-owned transaction is no longer active; the operation was not started.');
+        }
 
         return $scope;
     }

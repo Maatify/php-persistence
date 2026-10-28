@@ -1,6 +1,6 @@
 # php-persistence
 
-Direct-PDO ordering, pagination, and transaction utilities, designed to target MySQL and MariaDB (a design target; no database version is verified yet), developed as a separate package from the earlier `maatify/persistence`.
+Direct-PDO ordering, pagination, and transaction utilities, designed to target MySQL and MariaDB, developed as a separate package from the earlier `maatify/persistence`. Neither engine has a "range verified" supported version range declared; the Transaction capability's own tests have passed against specific named versions ("version tested" — see [docs/architecture/DATABASE_SUPPORT_AND_TEST_POLICY.md](docs/architecture/DATABASE_SUPPORT_AND_TEST_POLICY.md) §1 for what each term means), which is a narrower claim than a declared supported range.
 
 | | |
 |---|---|
