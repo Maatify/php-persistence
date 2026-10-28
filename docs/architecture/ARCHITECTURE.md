@@ -2,7 +2,7 @@
 
 `maatify/php-persistence` — direct-PDO transaction, pagination and ordering utilities, designed for MySQL and MariaDB.
 
-Status: **Development**. This document describes the intended architecture decided in WU-3. Since WU-4 the repository contains a Composer manifest, quality tooling and only the exception marker interface; its CI (WU-5) runs the quality gates and real-database infrastructure tests, and nothing here is released or installable. Statements about support are design targets, not claims ([DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md)).
+Status: **Development**. This document describes the intended architecture decided in WU-3. Since WU-4 the repository contains a Composer manifest and quality tooling; its CI (WU-5) runs the quality gates and real-database infrastructure tests. WU-6 implemented the Transaction capability (`PdoTransactionRunner`, `PdoSavepointTransactionRunner`, their exceptions, and the `@internal` executor and savepoint helper); Ordering and Pagination are not implemented yet. Nothing here is released or installable. Statements about database engine support are design targets, not claims ([DATABASE_SUPPORT_AND_TEST_POLICY.md](./DATABASE_SUPPORT_AND_TEST_POLICY.md)): the Transaction capability's own tests, including real deadlocks, pass on named MySQL and MariaDB versions in CI, which is evidence for those versions, not a declared supported range.
 
 ## 1. Document map
 

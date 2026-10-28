@@ -1,0 +1,111 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Maatify\PhpPersistence\Transaction\Repository;
+
+use Maatify\PhpPersistence\Transaction\Exception\TransactionExecutionException;
+use PDO;
+use Throwable;
+
+/**
+ * Operation-local savepoint inside a transaction the caller already owns:
+ * `SAVEPOINT`, `RELEASE SAVEPOINT` and `ROLLBACK TO SAVEPOINT`, with the
+ * best-effort cleanup order and exception precedence that
+ * {@see PdoSavepointTransactionRunner} characterizes (DEC-011 item 3).
+ *
+ * - {@see self::releaseOrUndo()} is the success path: RELEASE, or best-effort
+ *   cleanup followed by the RELEASE failure when it fails.
+ * - {@see self::cleanupAfterFailure()} is the failure path: best-effort
+ *   ROLLBACK TO and RELEASE after the caller's own failure (a thrown
+ *   Throwable, or a failed RELEASE); the caller's own failure always wins over
+ *   a cleanup failure.
+ * - {@see self::undoOrFail()} is for a caller that reports failure without
+ *   throwing: ROLLBACK TO must succeed, and its failure is not swallowed;
+ *   RELEASE afterwards is best effort. This shape exists so a future
+ *   non-callback consumer (Ordering, where a failed move returns `false`
+ *   instead of throwing) can reuse this helper without a second
+ *   implementation; it is not called by this capability's own runner.
+ *
+ * It never begins, commits, fully rolls back or retries the caller-owned
+ * transaction, and never retries the savepoint itself.
+ *
+ * @internal Shared mechanism of the savepoint runner; not part of the public API.
+ */
+final readonly class SavepointScope
+{
+    private const SAVEPOINT_PREFIX = 'maatify_persistence_sp_';
+
+    private function __construct(private PDO $pdo, private string $name) {}
+
+    /**
+     * @throws TransactionExecutionException when SAVEPOINT returns false
+     */
+    public static function begin(PDO $pdo): self
+    {
+        $scope = new self($pdo, self::SAVEPOINT_PREFIX . bin2hex(random_bytes(16)));
+        $scope->executeControlStatement('SAVEPOINT ' . $scope->name);
+
+        return $scope;
+    }
+
+    /**
+     * Success path: RELEASE. If it fails, the window is undone best effort and the release failure is thrown.
+     *
+     * @throws Throwable when RELEASE fails
+     */
+    public function releaseOrUndo(): void
+    {
+        try {
+            $this->executeControlStatement('RELEASE SAVEPOINT ' . $this->name);
+        } catch (Throwable $releaseThrowable) {
+            $this->cleanupAfterFailure();
+
+            throw $releaseThrowable;
+        }
+    }
+
+    /** After a Throwable in the window: best-effort ROLLBACK TO and RELEASE. The caller rethrows the original. */
+    public function cleanupAfterFailure(): void
+    {
+        if (!$this->pdo->inTransaction()) {
+            return;
+        }
+
+        if (!$this->tryControlStatement('ROLLBACK TO SAVEPOINT ' . $this->name)) {
+            return;
+        }
+
+        $this->tryControlStatement('RELEASE SAVEPOINT ' . $this->name);
+    }
+
+    /**
+     * For a non-throwing failed window: ROLLBACK TO must succeed, otherwise its
+     * failure propagates; RELEASE is best effort.
+     *
+     * @throws Throwable when ROLLBACK TO fails
+     */
+    public function undoOrFail(): void
+    {
+        $this->executeControlStatement('ROLLBACK TO SAVEPOINT ' . $this->name);
+        $this->tryControlStatement('RELEASE SAVEPOINT ' . $this->name);
+    }
+
+    private function executeControlStatement(string $sql): void
+    {
+        if ($this->pdo->exec($sql) === false) {
+            throw new TransactionExecutionException('PDO transaction control statement failed.');
+        }
+    }
+
+    private function tryControlStatement(string $sql): bool
+    {
+        try {
+            $this->executeControlStatement($sql);
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+}

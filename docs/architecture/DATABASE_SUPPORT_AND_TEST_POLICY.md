@@ -1,6 +1,6 @@
 # Database Support, Compatibility and Test Policy
 
-Status: policy and requirements for WU-5 and later. Nothing here is a support claim. The CI of WU-5 runs infrastructure-level tests on the real engines ([CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md)); no test verifies a package capability.
+Status: policy and requirements for WU-5 and later. Nothing here is a support claim. The CI of WU-5 runs infrastructure-level tests on the real engines ([CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md)); WU-6 additionally verifies the Transaction capability itself (B-10 to B-13, [BEHAVIOR_CONTRACT.md](./BEHAVIOR_CONTRACT.md)) on named cells, including genuine deadlocks. Ordering and Pagination are not implemented yet, so no test verifies those capabilities.
 
 Ratified policy: [DEC-008](../decisions/DEC-008-database-engine-targets-and-verification-policy.md). Test-only version boundary: [DEC-013](../decisions/DEC-013-test-only-database-version-boundary.md) (`ACTIVE`). MariaDB `1020` contract: [DEC-009](../decisions/DEC-009-proposed-version-matrix-and-mariadb-snapshot-isolation.md) (`PROPOSED`).
 
@@ -14,7 +14,7 @@ Ratified policy: [DEC-008](../decisions/DEC-008-database-engine-targets-and-veri
 | Unverified | A version outside the declared range, an engine whose endpoints are not both verified, or a behavior difference that is known or suspected but not covered by a test. | No. |
 
 Range support and per-version testing are different claims. The endpoint rule is what supports a range; a version between two verified endpoints is covered by the range claim and is not called individually tested unless it has its own cells. Intermediate cells are added by risk (section 4), not as a precondition for the range.
-Current state (2026-10-27): MySQL and MariaDB are design targets. Nothing is verified: the Integration infrastructure of WU-5 ([CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md)) runs infrastructure-level tests on candidate cells, which is test evidence for those cells and not a support range or a verification of the package's capabilities.
+Current state (2026-10-28): MySQL and MariaDB are design targets; no supported range is declared for either. The Integration infrastructure of WU-5 ([CI_AND_INTEGRATION.md](./CI_AND_INTEGRATION.md)) runs infrastructure-level tests on candidate cells, which is test evidence for those cells and not a verification of any package capability. WU-6 is the first exception: its Transaction capability tests, including genuine deadlocks, pass on the MySQL and MariaDB cells exercised in CI — "version tested" evidence for those named versions, not "range verified" (the endpoint rule and, for MariaDB, the still-`PROPOSED` `1020` contract of DEC-009 are not met) and not a claim for Ordering or Pagination, which are not implemented yet.
 
 ## 2. Engines and versions
 
