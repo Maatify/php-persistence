@@ -1,6 +1,6 @@
 # Contract Matrix — legacy `v1.4.0`, legacy `main`, new package
 
-Status: design contract for WU-4 and later. Nothing here is implemented, and no row claims verified equivalence. Behavior is in [BEHAVIOR_CONTRACT.md](./BEHAVIOR_CONTRACT.md); decisions are in [DECISIONS_INDEX.md](../decisions/DECISIONS_INDEX.md).
+Status: design contract for WU-4 and later. WU-6 implemented the Transaction rows (T-07, T-08, T-20 to T-26) exactly as mapped below; the reflection test required by §6.9 is `tests/Regression/TransactionPublicApiRegressionTest.php`. Ordering and Pagination rows remain design contract: nothing there is implemented, and no row claims verified equivalence. Behavior is in [BEHAVIOR_CONTRACT.md](./BEHAVIOR_CONTRACT.md); decisions are in [DECISIONS_INDEX.md](../decisions/DECISIONS_INDEX.md).
 
 ## 1. Sources and how to reproduce
 
