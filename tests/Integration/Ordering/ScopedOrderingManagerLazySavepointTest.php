@@ -10,6 +10,7 @@ use Maatify\PhpPersistence\Tests\Integration\IntegrationTestCase;
 use Maatify\PhpPersistence\Tests\Integration\Support\FaultInjectingPdo;
 use Maatify\PhpPersistence\Tests\Integration\Support\PartnerProcess;
 use Maatify\PhpPersistence\Tests\Support\Ordering\LazySavepointSchema;
+use Maatify\PhpPersistence\Transaction\Exception\TransactionExecutionException;
 use Maatify\PhpPersistence\Transaction\Repository\PdoSavepointTransactionRunner;
 use PDO;
 use PDOException;
@@ -37,16 +38,20 @@ use Throwable;
  *   the target write reports zero affected rows — is instead proven in
  *   tests/Unit/Ordering/Repository/ScopedOrderingManagerSavepointWiringTest.php with a scripted
  *   PDO, the same way WU-6 characterizes the shared helper's own statement sequence.
- * - legacy's lock-wait/deadlock/swallowed-deadlock scenarios (C07/C10/C15) used a second AUDIT
- *   table that a trigger on the target update also touched, to land the failure strictly inside
- *   the savepoint window. Without a trigger, every row the shift/target update will touch is
- *   already exclusively locked by the scope lock before the savepoint begins, so a second
- *   connection cannot contend for them inside that window at all; this is not a weaker test of
- *   the same scenario, it is a different scenario. testGenuineDeadlockDuringTheScopeLockPropagatesUnchanged
- *   below proves the adjacent, still real invariant that *is* reachable: a genuine deadlock while
- *   acquiring the scope lock (before any savepoint exists) propagates the original PDOException
- *   unchanged, with no savepoint statement issued and no retry. C15's dead-transaction guard is
- *   covered at the unit level by SavepointScopeTest (WU-6) and is not independently re-proven here.
+ * - legacy's lock-wait/deadlock (C07/C10) scenarios used a second AUDIT table that a trigger on
+ *   the target update also touched, to land the failure strictly inside the savepoint window.
+ *   Without a trigger, every row the shift/target update will touch is already exclusively
+ *   locked by the scope lock before the savepoint begins, so a second connection cannot contend
+ *   for them inside that window at all; this is not a weaker test of the same scenario, it is a
+ *   different scenario. testGenuineDeadlockDuringTheScopeLockPropagatesUnchanged below proves the
+ *   adjacent, still real invariant that *is* reachable: a genuine deadlock while acquiring the
+ *   scope lock (before any savepoint exists) propagates the original PDOException unchanged,
+ *   with no savepoint statement issued and no retry. C15 (a caller that swallows that same
+ *   deadlock and calls again) is proven directly on top of it by
+ *   testCallAfterSwallowedDeadlockEitherFailsClosedOrRunsAFreshOwnedTransaction (PR #17 review
+ *   F17-02): the unit-level SavepointScopeTest (WU-6) characterizes the guard's own statement
+ *   sequence in isolation, this proves its integration with Ordering after a real server-aborted
+ *   transaction.
  */
 final class ScopedOrderingManagerLazySavepointTest extends IntegrationTestCase
 {
@@ -157,6 +162,74 @@ final class ScopedOrderingManagerLazySavepointTest extends IntegrationTestCase
         self::assertSame(0, $delta['commit']);
         self::assertSame(0, $delta['rollback']);
         self::assertSame(['ACQUIRED'], $this->partnerReports());
+    }
+
+    // ---- C15: a caller that swallows a genuine deadlock and calls again ----
+
+    /**
+     * Legacy's testCallAfterSwallowedDeadlockFailsClosedBeforeAnyMutation (via an AFTER UPDATE
+     * audit trigger this project cannot create, see the class docblock) swallowed a genuine 1213
+     * and proved the second call failed closed before any mutation. This reuses the real
+     * deadlock-at-scope-lock experiment of testGenuineDeadlockDuringTheScopeLockPropagatesUnchanged
+     * and continues past the swallow instead of stopping there (PR #17 review F17-02). Observed
+     * directly against mysql-8.4.13 and mariadb-11.8.9: PDO::inTransaction() reports true
+     * immediately after the swallowed 1213 (the documented staleness) in both, so the second call
+     * is treated as participating and SavepointScope::begin()'s dead-transaction guard fires,
+     * throwing TransactionExecutionException before the scope lock or any mutation and leaving
+     * PDO::inTransaction() correctly false afterward (a real round trip occurred). Both branches
+     * are asserted explicitly rather than assumed, so a future engine/version where the driver
+     * already reports the transaction ended is still covered, honestly, by the other branch.
+     */
+    public function testCallAfterSwallowedDeadlockEitherFailsClosedOrRunsAFreshOwnedTransaction(): void
+    {
+        $this->beginCallerTransaction();
+        $this->pdo->exec('SET SESSION innodb_lock_wait_timeout = 20');
+
+        $firstRowStatement = $this->pdo->prepare(
+            'SELECT `id` FROM `' . $this->schema->plain . '` WHERE `id` = 1 FOR UPDATE',
+        );
+        self::assertInstanceOf(PDOStatement::class, $firstRowStatement);
+        $firstRowStatement->execute();
+        $firstRowStatement->fetchAll();
+
+        $partner = PartnerProcess::deadlockPartner($this->schema->plain, 1, 5);
+        $this->partners[] = $partner;
+        $ready = $partner->readLine(self::PARTNER_READ_TIMEOUT_SECONDS);
+        self::assertStringStartsWith('READY ', $ready);
+        $partner->writeLine('go');
+        $this->awaitBlockedPartner(substr($ready, strlen('READY ')));
+
+        try {
+            $this->move($this->schema->plain);
+            self::fail('Expected the caller to be the deadlock victim.');
+        } catch (PDOException $exception) {
+            self::assertSame(1213, $exception->errorInfo[1] ?? null);
+        }
+
+        // Forbidden pattern, deliberately reproduced here: the caller swallows the 1213 instead
+        // of restarting the whole unit of work, and calls the manager again on the same connection.
+        self::assertSame(['ACQUIRED'], $this->partnerReports());
+
+        if ($this->pdo->inTransaction()) {
+            // The documented staleness: the driver still reports the transaction active, so the
+            // second call participates, and the dead-transaction guard must fail it closed before
+            // any mutation — not after a partial shift, and not by silently starting an owned one.
+            try {
+                $this->move($this->schema->plain);
+                self::fail('Expected the dead-transaction guard (TransactionExecutionException).');
+            } catch (TransactionExecutionException) {
+            }
+
+            self::assertFalse($this->pdo->inTransaction(), 'The guard\'s own SAVEPOINT round trip refreshes the driver state.');
+            self::assertSame(self::INITIAL, $this->orders($this->control, $this->schema->plain));
+
+            return;
+        }
+
+        // The driver already reports the transaction ended: nothing is participating, so the
+        // second call runs as its own fresh owned transaction and must succeed normally.
+        self::assertTrue($this->move($this->schema->plain));
+        self::assertSame([1 => 1, 2 => 3, 3 => 4, 4 => 5, 5 => 2], $this->orders($this->control, $this->schema->plain));
     }
 
     // ---- C13: operation-local, an earlier successful move of the same transaction is kept ----

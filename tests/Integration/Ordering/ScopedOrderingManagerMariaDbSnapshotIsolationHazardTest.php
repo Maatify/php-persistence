@@ -25,6 +25,13 @@ use PDOException;
  * on an engine without the setting, the "ON" tests assert the ordinary success path instead (the
  * same guarantee the `getNextPosition*()`/`moveWithinScope()` contract already gives on MySQL),
  * and the "OFF" tests simply never set anything there.
+ *
+ * PR #17 review F17-01: the two "ON" cases also make a caller-owned write before the hazard and
+ * prove its fate on an independent connection (the whole transaction is rolled back, that earlier
+ * write included, not merely the one failing statement), then issue an identified, named
+ * statement on the SAME connection afterward and observe — never assume — whether the driver
+ * rejects it or accepts it as a fresh autocommitted unit (the "later statements may autocommit"
+ * hazard), confirming via the independent connection whether it actually persisted either way.
  */
 final class ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest extends OrderingIntegrationTestCase
 {
@@ -63,6 +70,10 @@ final class ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest extends Orde
         }
 
         $this->beginTransactionWithSnapshot();
+
+        // A caller-owned write before the hazard, to prove its fate (Issue #16 §4; PR #17 review F17-01).
+        $priorId = $onMariaDb ? $this->fixture->insertScoped('marker-scope', 1, 'caller-prior-write') : null;
+
         $this->otherFixture->insertScoped('scope-a', 1);
 
         if ($onMariaDb) {
@@ -74,7 +85,8 @@ final class ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest extends Orde
                 self::assertSame(1020, $exception->errorInfo[1] ?? null, $exception->getMessage());
             }
 
-            $this->assertServerEndedTheWholeTransactionAndNoRetryHappened();
+            self::assertIsInt($priorId);
+            $this->assertServerRolledBackThePriorCallerWriteAndObservesTheNextStatement($priorId);
 
             return;
         }
@@ -94,6 +106,9 @@ final class ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest extends Orde
 
         $id = $this->fixture->insertScoped('scope-a', 1);
         $this->beginTransactionWithSnapshot();
+
+        $priorId = $onMariaDb ? $this->fixture->insertScoped('marker-scope', 1, 'caller-prior-write') : null;
+
         $this->otherFixture->insertScoped('scope-a', 2);
 
         if ($onMariaDb) {
@@ -105,7 +120,8 @@ final class ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest extends Orde
                 self::assertSame(1020, $exception->errorInfo[1] ?? null, $exception->getMessage());
             }
 
-            $this->assertServerEndedTheWholeTransactionAndNoRetryHappened();
+            self::assertIsInt($priorId);
+            $this->assertServerRolledBackThePriorCallerWriteAndObservesTheNextStatement($priorId);
 
             return;
         }
@@ -158,14 +174,52 @@ final class ScopedOrderingManagerMariaDbSnapshotIsolationHazardTest extends Orde
 
     /**
      * No package retry, no setting override, no false success: the exact original 1020 already
-     * propagated above, unchanged. This only confirms the server genuinely ended the whole
-     * transaction (not merely the one statement), using the same successful-no-op probe
-     * {@see \Maatify\PhpPersistence\Transaction\Repository\OwnedTransactionExecutor} uses for B-12,
-     * since PDO::inTransaction() is documented to possibly still report true right after 1020.
+     * propagated above, unchanged. This proves the two things PR #17 review F17-01 found missing
+     * (Issue #16 §4; DATABASE_SUPPORT_AND_TEST_POLICY.md §7):
+     *
+     * - the prior caller-owned write made before the hazard does not survive it: an independent
+     *   connection must not see $priorId, confirming the server really rolled back the WHOLE
+     *   transaction (earlier writes included), not merely the one failing statement;
+     * - a named, identified statement issued afterward on the SAME connection is observed
+     *   directly rather than assumed. PDO::inTransaction() is documented to possibly still
+     *   report true right after 1020 (the same staleness B-12's OwnedTransactionExecutor probes
+     *   with `DO 0`); this issues a real INSERT and records whichever actually happens — the
+     *   connection rejects it (still reporting a transaction the server already ended), or it
+     *   autocommits as a fresh single-statement unit (the "later statements may autocommit"
+     *   hazard the Package Reference warns about) — then confirms via the independent
+     *   connection whether that statement's effect actually persisted.
      */
-    private function assertServerEndedTheWholeTransactionAndNoRetryHappened(): void
+    private function assertServerRolledBackThePriorCallerWriteAndObservesTheNextStatement(int $priorId): void
     {
+        self::assertFalse(
+            $this->rowVisibleTo($this->otherPdo, $priorId),
+            'The prior caller-owned write must not survive the documented 1020 (the whole transaction was rolled back).',
+        );
+
+        try {
+            $subsequentId = $this->fixture->insertScoped('marker-scope', 2, 'caller-subsequent-write');
+        } catch (PDOException) {
+            // Observed, not assumed — the connection rejected the identified subsequent statement
+            // outright. Nothing persisted to check; fall through to the final state assertion.
+            $subsequentId = null;
+        }
+
+        if ($subsequentId !== null) {
+            // Observed, not assumed: the connection accepted it. Confirm the effect actually
+            // persisted (the autocommit hazard), not merely that no exception was thrown.
+            self::assertTrue($this->rowVisibleTo($this->otherPdo, $subsequentId));
+        }
+
         $this->pdo()->exec('DO 0');
         self::assertFalse($this->pdo()->inTransaction());
+    }
+
+    private function rowVisibleTo(PDO $pdo, int $id): bool
+    {
+        $statement = $pdo->prepare('SELECT 1 FROM `' . $this->scopedTable . '` WHERE `id` = :id');
+        self::assertNotFalse($statement);
+        $statement->execute(['id' => $id]);
+
+        return $statement->fetchColumn() !== false;
     }
 }
