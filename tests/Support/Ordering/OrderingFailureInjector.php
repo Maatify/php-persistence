@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Maatify\PhpPersistence\Tests\Support\Ordering;
 
 use PDO;
+use PDOException;
 use PHPUnit\Framework\AssertionFailedError;
 
 /**
@@ -65,8 +66,19 @@ final readonly class OrderingFailureInjector
         return $constraint;
     }
 
+    /**
+     * `DROP CHECK` is MySQL's own syntax for a CHECK constraint since 8.0.16 (the project
+     * minimum) and is not understood by MariaDB; `DROP CONSTRAINT` is the generic form MariaDB
+     * (and MySQL 8.0.19+) understands but MySQL 8.0.16 itself does not (confirmed directly
+     * against the pinned image: 1064 "near 'CONSTRAINT ...'"). Trying the MySQL-native form
+     * first and falling back covers both without needing to detect the engine here.
+     */
     public function dropConstraint(string $table, string $constraint): void
     {
-        $this->pdo->exec('ALTER TABLE `' . $table . '` DROP CONSTRAINT `' . $constraint . '`');
+        try {
+            $this->pdo->exec('ALTER TABLE `' . $table . '` DROP CHECK `' . $constraint . '`');
+        } catch (PDOException) {
+            $this->pdo->exec('ALTER TABLE `' . $table . '` DROP CONSTRAINT `' . $constraint . '`');
+        }
     }
 }
