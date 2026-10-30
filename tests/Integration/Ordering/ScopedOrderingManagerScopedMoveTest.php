@@ -1,0 +1,194 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Maatify\PhpPersistence\Tests\Integration\Ordering;
+
+use Maatify\PhpPersistence\Ordering\Config\ScopedOrderingConfig;
+use Maatify\PhpPersistence\Ordering\Exception\InvalidOrderingOperationException;
+use Maatify\PhpPersistence\Ordering\Repository\ScopedOrderingManager;
+
+/**
+ * B-03 and B-06, scoped and nullable-scoped ordering, ported from legacy
+ * tests/Integration/Pdo/Ordering/ScopedOrderingManagerScopedMoveTest.php (1f6a7aa).
+ */
+final class ScopedOrderingManagerScopedMoveTest extends OrderingIntegrationTestCase
+{
+    private ScopedOrderingManager $manager;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->manager = new ScopedOrderingManager();
+    }
+
+    public function testMoveUpwardInsideOneScopeDoesNotChangeOtherScope(): void
+    {
+        $a = $this->insertScopedOrders('scope-a', 1, 2, 3, 4, 5);
+        $b = $this->insertScopedOrders('scope-b', 1, 2, 3);
+        $beforeB = $this->reader()->scopedOrdersById('scope-b');
+
+        $result = $this->manager->moveWithinScope($this->pdo(), $this->scopedConfig(), 'scope-a', $a[4], 2);
+
+        self::assertTrue($result);
+        self::assertSame([$a[0] => 1, $a[1] => 3, $a[2] => 4, $a[3] => 5, $a[4] => 2], $this->reader()->scopedOrdersById('scope-a'));
+        self::assertSame($beforeB, $this->reader()->scopedOrdersById('scope-b'));
+        self::assertSame([$b[0] => 1, $b[1] => 2, $b[2] => 3], $beforeB);
+        self::assertFalse($this->pdo()->inTransaction());
+    }
+
+    public function testMoveDownwardInsideOneScopeDoesNotChangeOtherScope(): void
+    {
+        $a = $this->insertScopedOrders('scope-a', 1, 2, 3, 4, 5);
+        $b = $this->insertScopedOrders('scope-b', 10, 11);
+
+        $result = $this->manager->moveWithinScope($this->pdo(), $this->scopedConfig(), 'scope-a', $a[1], 5);
+
+        self::assertTrue($result);
+        self::assertSame([$a[0] => 1, $a[1] => 5, $a[2] => 2, $a[3] => 3, $a[4] => 4], $this->reader()->scopedOrdersById('scope-a'));
+        self::assertSame([$b[0] => 10, $b[1] => 11], $this->reader()->scopedOrdersById('scope-b'));
+        self::assertFalse($this->pdo()->inTransaction());
+    }
+
+    public function testTargetQueriedThroughWrongScopeReturnsFalse(): void
+    {
+        $a = $this->insertScopedOrders('scope-a', 1, 2);
+        $b = $this->insertScopedOrders('scope-b', 1, 2);
+        $beforeA = $this->reader()->scopedOrdersById('scope-a');
+        $beforeB = $this->reader()->scopedOrdersById('scope-b');
+
+        $result = $this->manager->moveWithinScope($this->pdo(), $this->scopedConfig(), 'scope-b', $a[0], 2);
+
+        self::assertFalse($result);
+        self::assertSame($beforeA, $this->reader()->scopedOrdersById('scope-a'));
+        self::assertSame($beforeB, $this->reader()->scopedOrdersById('scope-b'));
+        self::assertSame([$b[0] => 1, $b[1] => 2], $beforeB);
+        self::assertFalse($this->pdo()->inTransaction());
+    }
+
+    public function testClampUsesRequestedScopeMaximum(): void
+    {
+        $a = $this->insertScopedOrders('scope-a', 1, 2, 3);
+        $b = $this->insertScopedOrders('scope-b', 10, 20);
+
+        $result = $this->manager->moveWithinScope($this->pdo(), $this->scopedConfig(), 'scope-a', $a[0], 999);
+
+        self::assertTrue($result);
+        self::assertSame([$a[0] => 3, $a[1] => 1, $a[2] => 2], $this->reader()->scopedOrdersById('scope-a'));
+        self::assertSame([$b[0] => 10, $b[1] => 20], $this->reader()->scopedOrdersById('scope-b'));
+        self::assertFalse($this->pdo()->inTransaction());
+    }
+
+    public function testIntegerScopeValueMovesPersistedRows(): void
+    {
+        $ids = $this->insertScopedOrders(42, 1, 2, 3);
+
+        $result = $this->manager->moveWithinScope($this->pdo(), $this->scopedConfig(), 42, $ids[2], 1);
+
+        self::assertTrue($result);
+        self::assertSame([$ids[0] => 2, $ids[1] => 3, $ids[2] => 1], $this->reader()->scopedOrdersById(42));
+        self::assertFalse($this->pdo()->inTransaction());
+    }
+
+    public function testStringScopeValueMovesPersistedRows(): void
+    {
+        $ids = $this->insertScopedOrders('string-scope', 1, 2, 3);
+
+        $result = $this->manager->moveWithinScope($this->pdo(), $this->scopedConfig(), 'string-scope', $ids[0], 3);
+
+        self::assertTrue($result);
+        self::assertSame([$ids[0] => 3, $ids[1] => 1, $ids[2] => 2], $this->reader()->scopedOrdersById('string-scope'));
+        self::assertFalse($this->pdo()->inTransaction());
+    }
+
+    public function testScopedNoOpLeavesBothScopesUnchanged(): void
+    {
+        $a = $this->insertScopedOrders('scope-a', 1, 2, 3);
+        $b = $this->insertScopedOrders('scope-b', 4, 5);
+        $beforeA = $this->reader()->scopedOrdersById('scope-a');
+        $beforeB = $this->reader()->scopedOrdersById('scope-b');
+
+        $result = $this->manager->moveWithinScope($this->pdo(), $this->scopedConfig(), 'scope-a', $a[1], 2);
+
+        self::assertTrue($result);
+        self::assertSame($beforeA, $this->reader()->scopedOrdersById('scope-a'));
+        self::assertSame($beforeB, $this->reader()->scopedOrdersById('scope-b'));
+        self::assertSame([$b[0] => 4, $b[1] => 5], $beforeB);
+        self::assertFalse($this->pdo()->inTransaction());
+    }
+
+    public function testScopedConfigurationRejectsNullScopeValueBeforeTransactionBegins(): void
+    {
+        $ids = $this->insertScopedOrders('scope-a', 1);
+        $before = $this->reader()->scopedOrdersById('scope-a');
+
+        try {
+            $this->manager->moveWithinScope($this->pdo(), $this->scopedConfig(), null, $ids[0], 1);
+            self::fail('Expected invalid ordering operation exception.');
+        } catch (InvalidOrderingOperationException) {
+            self::assertSame($before, $this->reader()->scopedOrdersById('scope-a'));
+            self::assertFalse($this->pdo()->inTransaction());
+        }
+    }
+
+    public function testNullableScopedConfigurationMovesRowsInTheNullScope(): void
+    {
+        $root = $this->insertScopedOrders(null, 1, 2, 3);
+        $nested = $this->insertScopedOrders('scope-a', 1, 2);
+
+        $result = $this->manager->moveWithinScope(
+            $this->pdo(),
+            $this->nullableScopedConfig(),
+            null,
+            $root[2],
+            1,
+        );
+
+        self::assertTrue($result);
+        self::assertSame([$root[0] => 2, $root[1] => 3, $root[2] => 1], $this->reader()->scopedOrdersById(null));
+        self::assertSame([$nested[0] => 1, $nested[1] => 2], $this->reader()->scopedOrdersById('scope-a'));
+        self::assertFalse($this->pdo()->inTransaction());
+    }
+
+    public function testMoveUpdatesConfiguredTimestampInTheSameTargetUpdate(): void
+    {
+        $target = $this->fixture->insertScoped('scope-a', 1, 'target', null, '2026-01-01 00:00:00');
+        $other = $this->fixture->insertScoped('scope-a', 2, 'other', null, '2026-01-01 00:00:00');
+
+        $result = $this->manager->moveWithinScope(
+            $this->pdo(),
+            new ScopedOrderingConfig(
+                table: $this->scopedTable,
+                scopeColumn: 'scope_key',
+                updatedAtColumn: 'updated_at',
+            ),
+            'scope-a',
+            $other,
+            1,
+            '2026-01-03 12:34:56',
+        );
+
+        self::assertTrue($result);
+        self::assertSame([$target => 2, $other => 1], $this->reader()->scopedOrdersById('scope-a'));
+
+        $statement = $this->pdo()->prepare(
+            'SELECT `updated_at` FROM `' . $this->scopedTable . '` WHERE `id` = :id',
+        );
+        $statement->execute(['id' => $other]);
+        self::assertSame('2026-01-03 12:34:56', $statement->fetchColumn());
+        self::assertFalse($this->pdo()->inTransaction());
+    }
+
+    /**
+     * @return list<int>
+     */
+    private function insertScopedOrders(int|string|null $scopeValue, int ...$orders): array
+    {
+        $ids = [];
+        foreach ($orders as $order) {
+            $ids[] = $this->fixture->insertScoped($scopeValue, $order);
+        }
+
+        return $ids;
+    }
+}
